@@ -1,0 +1,5 @@
+server.py
+build_words.py
+build_full.py
+*.zip
+*.json.bak

@@ -1,0 +1,16 @@
+{
+  "name": "六级高频词汇",
+  "short_name": "六级词频",
+  "description": "CET-6 高频词汇背单词 PWA, 按考频排序, 支持艾宾浩斯复习, 完全离线",
+  "lang": "zh-CN",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "theme_color": "#12122a",
+  "background_color": "#12122a",
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+  ]
+}

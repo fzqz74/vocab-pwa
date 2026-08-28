@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <meta name="theme-color" content="#1a1a2e">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="六级词频">
+  <link rel="manifest" href="manifest.json">
+  <link rel="apple-touch-icon" href="icons/icon-192.png">
+  <title>六级高频词汇</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+  <!-- ========== 首页 ========== -->
+  <div id="page-home" class="page active">
+    <header class="app-header">
+      <h1>六级高频词汇</h1>
+      <p class="subtitle">CET-6 High Frequency · 按考频排序</p>
+    </header>
+    <div class="home-stats">
+      <div class="stat-card" id="stat-total">
+        <span class="stat-number" id="stat-total-num">0</span>
+        <span class="stat-label">总词数</span>
+      </div>
+      <div class="stat-card" id="stat-done">
+        <span class="stat-number" id="stat-done-num">0</span>
+        <span class="stat-label">已背完</span>
+      </div>
+      <div class="stat-card" id="stat-remain">
+        <span class="stat-number" id="stat-remain-num">0</span>
+        <span class="stat-label">未背完</span>
+      </div>
+    </div>
+    <div class="home-section">
+      <h2>开始背单词</h2>
+      <div class="progress-bar-wrap">
+        <div class="progress-bar" id="home-progress"></div>
+      </div>
+      <p class="progress-text" id="home-progress-text">第 0 轮 · 进度 0/0</p>
+    </div>
+    <div class="home-actions">
+      <button class="btn btn-primary btn-block" id="btn-start-remain">
+        <span class="btn-icon">📖</span>
+        <span>背未完成的单词</span>
+      </button>
+      <button class="btn btn-secondary btn-block" id="btn-start-done">
+        <span class="btn-icon">🔄</span>
+        <span>复习已完成的单词</span>
+      </button>
+    </div>
+    <nav class="bottom-nav">
+      <button class="nav-btn active" data-page="home">
+        <span class="nav-icon">🏠</span>
+        <span>首页</span>
+      </button>
+      <button class="nav-btn" data-page="settings">
+        <span class="nav-icon">⚙️</span>
+        <span>设置</span>
+      </button>
+    </nav>
+  </div>
+
+  <!-- ========== 刷词页面 ========== -->
+  <div id="page-swipe" class="page">
+    <header class="swipe-header">
+      <button class="btn-back" id="btn-back-home">←</button>
+      <span class="swipe-mode-label" id="swipe-mode-label">刷词模式</span>
+      <span class="swipe-counter" id="swipe-counter">1 / 100</span>
+    </header>
+
+    <div class="card-container" id="card-container">
+      <div class="word-card" id="word-card">
+        <span class="review-badge" id="review-badge">🔁 复习</span>
+        <div class="card-inner">
+          <div class="card-front">
+            <span class="word-text" id="word-text">loading...</span>
+            <span class="word-phonetic" id="word-phonetic">/ləʊdɪŋ/</span>
+            <span class="word-meaning front-meaning" id="word-meaning-front"></span>
+            <button class="btn-speak" id="btn-speak" title="朗读">🔊</button>
+          </div>
+          <div class="card-back">
+            <span class="word-text" id="word-text-back">word</span>
+            <span class="word-phonetic" id="word-phonetic-back">/wɜːd/</span>
+            <span class="word-meaning" id="word-meaning">释义</span>
+          </div>
+        </div>
+      </div>
+      <p class="swipe-hint" id="swipe-hint">← 左滑下一个 · 点击卡片看释义</p>
+    </div>
+
+    <div class="swipe-footer">
+      <button class="btn btn-sm" id="btn-prev">上一个</button>
+      <button class="btn btn-sm" id="btn-mark">⭐ 标记</button>
+      <button class="btn btn-sm btn-accent" id="btn-next">下一个</button>
+    </div>
+  </div>
+
+  <!-- ========== 设置页面 ========== -->
+  <div id="page-settings" class="page">
+    <header class="app-header">
+      <h1>设置</h1>
+    </header>
+    <div class="settings-list">
+      <div class="settings-group">
+        <h3>背词模式</h3>
+        <label class="radio-item">
+          <input type="radio" name="mode" value="swipe" checked>
+          <span class="radio-label">
+            <span class="radio-title">顺序刷词</span>
+            <span class="radio-desc">按考频顺序从第1个到最后1个，滑动切换</span>
+          </span>
+        </label>
+        <label class="radio-item">
+          <input type="radio" name="mode" value="ebbinghaus">
+          <span class="radio-label">
+            <span class="radio-title">艾宾浩斯复习</span>
+            <span class="radio-desc">基于遗忘曲线间隔重复，一轮内多次复习</span>
+          </span>
+        </label>
+      </div>
+      <div class="settings-group">
+        <h3>词表选择</h3>
+        <label class="radio-item">
+          <input type="radio" name="wordlist" value="core" checked>
+          <span class="radio-label">
+            <span class="radio-title">高频精简版</span>
+            <span class="radio-desc">1887 个六级核心词（已剔除初高中四级基础词）</span>
+          </span>
+        </label>
+        <label class="radio-item">
+          <input type="radio" name="wordlist" value="full">
+          <span class="radio-label">
+            <span class="radio-title">完整版</span>
+            <span class="radio-desc">3991 个六级全部词汇（含基础词），按词频排序</span>
+          </span>
+        </label>
+      </div>
+      <div class="settings-group">
+        <h3>卡片显示</h3>
+        <label class="radio-item">
+          <input type="radio" name="display" value="flip" checked>
+          <span class="radio-label">
+            <span class="radio-title">点击翻面</span>
+            <span class="radio-desc">先看单词回忆，点击卡片翻面看释义</span>
+          </span>
+        </label>
+        <label class="radio-item">
+          <input type="radio" name="display" value="direct">
+          <span class="radio-label">
+            <span class="radio-title">直接显示释义</span>
+            <span class="radio-desc">单词、音标、中文释义同时可见，无需点击</span>
+          </span>
+        </label>
+      </div>
+      <div class="settings-group">
+        <h3>每日目标</h3>
+        <div class="slider-row">
+          <input type="range" id="daily-goal" min="10" max="200" step="10" value="50">
+          <span id="daily-goal-value">50 词/天</span>
+        </div>
+      </div>
+      <div class="settings-group">
+        <h3>数据管理</h3>
+        <button class="btn btn-danger btn-block" id="btn-reset">重置所有进度</button>
+      </div>
+      <div class="settings-group">
+        <h3>关于</h3>
+        <p class="about-text">
+          词库来源：KyleBing/english-vocabulary 六级词表（GitHub 开源）<br>
+          音标来源：有道 CET6 词书（kajweb/dict 开源整理）<br>
+          排序方式：按 Google Books 英语词频降序（近似考频），已剔除初中/高中/四级基础词<br>
+          词库规模：1887 个六级核心词<br>
+          数据存储：本地浏览器（离线可用）<br>
+          技术方案：PWA（可添加到桌面）
+        </p>
+      </div>
+    </div>
+    <nav class="bottom-nav">
+      <button class="nav-btn" data-page="home">
+        <span class="nav-icon">🏠</span>
+        <span>首页</span>
+      </button>
+      <button class="nav-btn active" data-page="settings">
+        <span class="nav-icon">⚙️</span>
+        <span>设置</span>
+      </button>
+    </nav>
+  </div>
+
+  <!-- ========== 完成弹窗 ========== -->
+  <div class="done-overlay" id="done-overlay">
+    <span class="big-emoji">🎓</span>
+    <h2>学习完成</h2>
+    <p></p>
+    <button class="btn btn-primary" id="done-overlay-btn" style="padding:12px 40px">返回首页</button>
+  </div>
+
+  <script src="js/words.js"></script>
+  <script src="js/words_full.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
