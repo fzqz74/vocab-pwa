@@ -44,15 +44,17 @@ const EBINGHAUS_GAPS = [4, 10]; // 新词之后第4个、第10个位置再现
  */
 function buildEbbinghausQueue(n) {
   if (n === 0) return [];
-  const lastGap = EBINGHAUS_GAPS[EBINGHAUS_GAPS.length - 1];
+  const lastGap = EBINGHAUS_GAPS.reduce((a, b) => a + b, 0); // 累计总偏移
   const slots = n + lastGap + 1;
   const events = Array.from({ length: slots }, () => []);
   const lastOcc = new Array(n).fill(0);
   for (let i = 0; i < n; i++) {
     events[i].push({ idx: i, review: false });
     lastOcc[i] = i;
-    EBINGHAUS_GAPS.forEach((g, k) => {
-      const pos = i + g * (k + 1);
+    let cum = 0;
+    EBINGHAUS_GAPS.forEach(g => {
+      cum += g;
+      const pos = i + cum;
       if (pos < slots) {
         events[pos].push({ idx: i, review: true });
         lastOcc[i] = Math.max(lastOcc[i], pos);
@@ -102,6 +104,7 @@ function speak(word) {
 }
 
 /* ---------- 会话 ---------- */
+let lastNavTime = 0; // 最近一次翻页时间, 防止滑动后误触发翻面
 const session = {
   active: false,
   words: [],      // 本轮会话的词对象列表
@@ -174,6 +177,7 @@ function markCurrentDone() {
 
 function next(dir) { // dir: 1 下一个, -1 上一个
   if (!session.active) return;
+  lastNavTime = Date.now();
   if (dir === 1) markCurrentDone();
   const card = document.getElementById('word-card');
   const total = session.queue.length;
@@ -241,10 +245,7 @@ function endSession() {
     const TH = 60;
     if (dx < -TH) next(1);        // 左滑 -> 下一个
     else if (dx > TH) next(-1);   // 右滑 -> 上一个
-    else if (Math.abs(dx) < 8 && Math.abs(dy) < 8 && state.display === 'flip') {
-      card.classList.toggle('flipped'); // 轻点 -> 翻面(仅翻面模式)
-      if (!card.classList.contains('flipped')) return;
-    }
+    // 轻点翻面交给 click 事件处理
   });
 
   // 桌面鼠标拖拽
@@ -254,7 +255,13 @@ function endSession() {
     if (mdx === null) return;
     const d = e.clientX - mdx; mdx = null;
     if (d < -TH) next(1); else if (d > TH) next(-1);
-    else if (Math.abs(d) < 6 && state.display === 'flip') card.classList.toggle('flipped');
+  });
+
+  // 翻面: 用 click 事件(桌面/手机都可靠); 滑动后短暂忽略防误翻
+  card.addEventListener('click', () => {
+    if (state.display !== 'flip') return;
+    if (Date.now() - lastNavTime < 400) return;
+    card.classList.toggle('flipped');
   });
 })();
 
@@ -288,9 +295,15 @@ function showPage(name, push) {
   }
 }
 window.addEventListener('popstate', e => {
-  const name = (e.state && e.state.page) || 'home';
+  let name = (e.state && e.state.page) || 'home';
+  // 刷新后历史状态可能残留, 而会话已不存在, 回首页
+  if (name === 'swipe' && !session.active) name = 'home';
   showPage(name, false);
 });
+// 启动时重置历史状态, 避免刷新后残留 #swipe 状态
+if (history.state && history.state.page) {
+  try { history.replaceState({ page: 'home' }, '', location.pathname + location.search); } catch (e) {}
+}
 
 document.querySelectorAll('.nav-btn').forEach(b =>
   b.addEventListener('click', () => showPage(b.dataset.page)));
@@ -338,6 +351,7 @@ document.getElementById('btn-back-home').addEventListener('touchend', e => {
     }
   };
   b.addEventListener('touchend', e => { e.preventDefault(); act(); });
+  b.addEventListener('click', act); // 桌面鼠标
 });
 document.getElementById('btn-speak').addEventListener('click', e => {
   e.stopPropagation();
