@@ -82,13 +82,23 @@ function pickMaleVoice() {
 
 function speak(word) {
   if (!('speechSynthesis' in window)) return;
-  speechSynthesis.cancel();
+  const synth = speechSynthesis;
+  try { synth.cancel(); } catch (e) {}
   const u = new SpeechSynthesisUtterance(word);
   u.lang = 'en-US';
   u.rate = 0.92;
+  // 立即取一次 voices(部分手机首次为空, 隔一段再试)
+  if (!voicesCache.length) refreshVoices();
   const v = pickMaleVoice();
   if (v) u.voice = v;
-  speechSynthesis.speak(u);
+  u.onerror = () => { // 部分安卓机 cancel 后立即 speak 会静音, 延迟重试一次
+    if (!u._retried) {
+      u._retried = true;
+      setTimeout(() => synth.speak(u), 120);
+    }
+  };
+  // Chrome安卓: cancel 后同一帧 speak 会被吞, 延迟一帧
+  setTimeout(() => synth.speak(u), 50);
 }
 
 /* ---------- 会话 ---------- */
@@ -262,12 +272,25 @@ function refreshHome() {
 }
 
 /* ---------- 页面切换 ---------- */
-function showPage(name) {
+function showPage(name, push) {
+  // 从子页面回首页: 消费掉压入的历史(触发 popstate 再回来渲染)
+  if (name === 'home' && push !== false && history.state && history.state.page) {
+    history.back();
+    return;
+  }
   document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
   document.getElementById('page-' + name).classList.add('active');
   document.querySelectorAll('.nav-btn').forEach(b =>
     b.classList.toggle('active', b.dataset.page === name));
+  // 压入浏览器历史, 让安卓返回键能回退页面
+  if (push !== false && name !== 'home') {
+    try { history.pushState({ page: name }, '', location.href.split('#')[0] + '#' + name); } catch (e) {}
+  }
 }
+window.addEventListener('popstate', e => {
+  const name = (e.state && e.state.page) || 'home';
+  showPage(name, false);
+});
 
 document.querySelectorAll('.nav-btn').forEach(b =>
   b.addEventListener('click', () => showPage(b.dataset.page)));
@@ -285,28 +308,42 @@ document.getElementById('done-overlay-btn')?.addEventListener('click', () => {
 });
 
 /* ---------- 事件绑定 ---------- */
-document.getElementById('btn-start-remain').addEventListener('click', () => startSession(false));
-document.getElementById('btn-start-done').addEventListener('click', () => startSession(true));
-document.getElementById('btn-back-home').addEventListener('click', () => {
+function goHome() {
   session.active = false;
   speechSynthesis && speechSynthesis.cancel();
   refreshHome();
   showPage('home');
+}
+document.getElementById('btn-start-remain').addEventListener('click', () => startSession(false));
+document.getElementById('btn-start-done').addEventListener('click', () => startSession(true));
+// 手机上部分浏览器 click 不可靠, 同时绑 touchend (preventDefault 防止触发两次)
+document.getElementById('btn-back-home').addEventListener('click', goHome);
+document.getElementById('btn-back-home').addEventListener('touchend', e => {
+  e.preventDefault();
+  goHome();
 });
-document.getElementById('btn-prev').addEventListener('click', () => next(-1));
-document.getElementById('btn-next').addEventListener('click', () => next(1));
+// 底部按钮同样加固
+['btn-prev', 'btn-next', 'btn-mark'].forEach(id => {
+  const b = document.getElementById(id);
+  if (!b) return;
+  const act = () => {
+    if (id === 'btn-prev') next(-1);
+    else if (id === 'btn-next') next(1);
+    else {
+      const e = curEntry(); if (!e) return;
+      const word = session.words[e.idx].word;
+      if (state.marked[word]) delete state.marked[word];
+      else state.marked[word] = 1;
+      saveState();
+    }
+  };
+  b.addEventListener('touchend', e => { e.preventDefault(); act(); });
+});
 document.getElementById('btn-speak').addEventListener('click', e => {
   e.stopPropagation();
   const w = curEntry(); if (w) speak(session.words[w.idx].word);
 });
 document.getElementById('btn-speak').addEventListener('touchend', e => e.stopPropagation());
-document.getElementById('btn-mark')?.addEventListener('click', () => {
-  const e = curEntry(); if (!e) return;
-  const word = session.words[e.idx].word;
-  if (state.marked[word]) delete state.marked[word];
-  else state.marked[word] = 1;
-  saveState();
-});
 
 /* ---------- 设置 ---------- */
 document.querySelectorAll('input[name=mode]').forEach(r =>

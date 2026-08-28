@@ -176,14 +176,16 @@ html, body {
   gap: 12px;
 }
 .btn-back {
-  width: 36px;
-  height: 36px;
+  width: 44px;
+  height: 44px;
+  min-width: 44px;
   border-radius: 50%;
   border: none;
   background: rgba(255,255,255,.1);
   color: #fff;
-  font-size: 18px;
+  font-size: 20px;
   cursor: pointer;
+  touch-action: manipulation;
 }
 .swipe-mode-label {
   font-size: 13px;
