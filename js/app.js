@@ -67,7 +67,18 @@ function buildEbbinghausQueue(n) {
   return { queue, lastOcc };
 }
 
-/* ---------- 朗读 (男声优先, 离线) ---------- */
+/* ---------- 朗读 (预录mp3优先, 浏览器TTS兜底) ---------- */
+let curAudio = null;
+function speak(word) {
+  try {
+    if (!curAudio) curAudio = new Audio();
+    curAudio.pause();
+    curAudio.src = 'audio/' + encodeURIComponent(word) + '.mp3';
+    const p = curAudio.play();
+    if (p && p.catch) p.catch(() => ttsSpeak(word)); // 无音频文件时回退TTS
+  } catch (e) { ttsSpeak(word); }
+}
+
 let voicesCache = [];
 function refreshVoices() { voicesCache = speechSynthesis.getVoices(); }
 if ('speechSynthesis' in window) {
@@ -82,7 +93,7 @@ function pickMaleVoice() {
   return male || en.find(v => /en[-_]US/i.test(v.lang)) || en[0];
 }
 
-function speak(word) {
+function ttsSpeak(word) { // 浏览器TTS兜底(部分手机阉割了此功能)
   if (!('speechSynthesis' in window)) return;
   const synth = speechSynthesis;
   try { synth.cancel(); } catch (e) {}
@@ -280,30 +291,26 @@ function refreshHome() {
 
 /* ---------- 页面切换 ---------- */
 function showPage(name, push) {
-  // 从子页面回首页: 消费掉压入的历史(触发 popstate 再回来渲染)
-  if (name === 'home' && push !== false && history.state && history.state.page) {
-    history.back();
-    return;
-  }
   document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
   document.getElementById('page-' + name).classList.add('active');
   document.querySelectorAll('.nav-btn').forEach(b =>
     b.classList.toggle('active', b.dataset.page === name));
-  // 压入浏览器历史, 让安卓返回键能回退页面
-  if (push !== false && name !== 'home') {
-    try { history.pushState({ page: name }, '', location.href.split('#')[0] + '#' + name); } catch (e) {}
-  }
+  // 历史管理: 进子页面压栈, 回首页用 replaceState(不调用 history.back,
+  // 部分手机浏览器对程序化回退支持差, 会卡死)
+  if (push === false) return; // popstate 触发的渲染
+  try {
+    if (name === 'home') {
+      history.replaceState({ page: 'home' }, '', location.pathname + location.search);
+    } else {
+      history.pushState({ page: name }, '', location.pathname + location.search + '#' + name);
+    }
+  } catch (e) {}
 }
 window.addEventListener('popstate', e => {
   let name = (e.state && e.state.page) || 'home';
-  // 刷新后历史状态可能残留, 而会话已不存在, 回首页
   if (name === 'swipe' && !session.active) name = 'home';
   showPage(name, false);
 });
-// 启动时重置历史状态, 避免刷新后残留 #swipe 状态
-if (history.state && history.state.page) {
-  try { history.replaceState({ page: 'home' }, '', location.pathname + location.search); } catch (e) {}
-}
 
 document.querySelectorAll('.nav-btn').forEach(b =>
   b.addEventListener('click', () => showPage(b.dataset.page)));
@@ -397,6 +404,29 @@ document.getElementById('btn-reset').addEventListener('click', () => {
 /* ---------- Service Worker ---------- */
 if ('serviceWorker' in navigator && location.protocol !== 'file:') {
   navigator.serviceWorker.register('sw.js').catch(() => {});
+}
+
+/* ---------- 发音预缓存: 首次打开后空闲时批量拉取, 之后离线可听 ---------- */
+function prefetchAudio() {
+  if (!navigator.onLine) return;
+  const set = new Set();
+  CET6_WORDS.forEach(w => set.add(w.word));
+  if (typeof CET6_WORDS_FULL !== 'undefined') CET6_WORDS_FULL.forEach(w => set.add(w.word));
+  const words = [...set];
+  let i = 0;
+  const worker = async () => {
+    while (i < words.length) {
+      const w = words[i++];
+      try { await fetch('audio/' + encodeURIComponent(w) + '.mp3'); } catch (e) { return; }
+    }
+  };
+  Promise.all([worker(), worker(), worker(), worker(), worker(), worker()]);
+}
+if (localStorage.getItem('audio.prefetched') !== '1') {
+  setTimeout(() => {
+    prefetchAudio();
+    localStorage.setItem('audio.prefetched', '1');
+  }, 4000);
 }
 
 /* ---------- 启动 ---------- */
