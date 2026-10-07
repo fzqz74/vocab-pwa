@@ -1,5 +1,5 @@
 /* 离线缓存: 首次访问后所有资源本地化, 无网络可用 */
-const CACHE = 'cet6-vocab-v9';
+const CACHE = 'cet6-vocab-v10';
 const ASSETS = [
   './',
   'index.html',

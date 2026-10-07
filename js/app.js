@@ -79,6 +79,12 @@ function speak(word) {
   } catch (e) { ttsSpeak(word); }
 }
 
+/* 停止一切发声: 预录音频 + TTS (离开卡片/结束会话时调用) */
+function stopSpeak() {
+  try { if (curAudio) { curAudio.pause(); curAudio.currentTime = 0; } } catch (e) {}
+  try { if ('speechSynthesis' in window) window.speechSynthesis.cancel(); } catch (e) {}
+}
+
 let voicesCache = [];
 function refreshVoices() { voicesCache = speechSynthesis.getVoices(); }
 if ('speechSynthesis' in window) {
@@ -118,21 +124,45 @@ function ttsSpeak(word) { // 浏览器TTS兜底(部分手机阉割了此功能)
 let lastNavTime = 0; // 最近一次翻页时间, 防止滑动后误触发翻面
 const session = {
   active: false,
+  kind: 'remain', // remain=背未完成 / done=复习已完成 / marked=背标记词
   words: [],      // 本轮会话的词对象列表
   queue: [],      // 播放队列 {idx, review}
   lastOcc: null,  // 艾宾浩斯: 每个词最后一次出现的位置
   pos: 0,
-  isReviewSet: false, // 本次背的是"已完成"集合
+  noProgress: false, // 复习/标记模式只读, 不写入背诵进度
 };
 
-function startSession(reviewSet) {
-  const all = wordList();
-  const list = reviewSet
-    ? all.filter(w => state.doneMap[w.word])
-    : all.filter(w => !state.doneMap[w.word]);
-  if (!list.length) { showDoneOverlay(reviewSet ? '已完成词库是空的' : '本轮已全部背完！', true); return; }
+const SESSION_LABEL = { remain: '刷词模式', done: '复习模式', marked: '标记词' };
 
-  session.isReviewSet = reviewSet;
+/* 标记词集合: 当前词表的标记词在前, 再补上另一词表里标过的词 */
+function markedWords() {
+  const seen = new Set();
+  const out = [];
+  const push = w => {
+    if (w && state.marked[w.word] && !seen.has(w.word)) { seen.add(w.word); out.push(w); }
+  };
+  wordList().forEach(push);
+  const other = state.wordlist === 'full' ? CET6_WORDS : CET6_WORDS_FULL;
+  if (typeof other !== 'undefined' && other) other.forEach(push);
+  return out;
+}
+
+function startSession(kind) {
+  const all = wordList();
+  let list;
+  if (kind === 'marked') list = markedWords();
+  else if (kind === 'done') list = all.filter(w => state.doneMap[w.word]);
+  else list = all.filter(w => !state.doneMap[w.word]);
+
+  if (!list.length) {
+    if (kind === 'marked') showDoneOverlay('还没有标记任何单词\n刷词时点底部「⭐ 标记」即可收藏', true);
+    else if (kind === 'done') showDoneOverlay('已完成词库是空的', true);
+    else showDoneOverlay('本轮已全部背完！', true);
+    return;
+  }
+
+  session.kind = kind;
+  session.noProgress = (kind !== 'remain');
   session.words = list;
   if (state.mode === 'ebbinghaus') {
     const { queue, lastOcc } = buildEbbinghausQueue(list.length);
@@ -169,11 +199,14 @@ function renderCard() {
   badge.classList.toggle('show', !!e.review);
 
   document.getElementById('swipe-mode-label').textContent =
-    state.mode === 'ebbinghaus' ? '艾宾浩斯' : '刷词模式';
+    session.kind === 'remain'
+      ? (state.mode === 'ebbinghaus' ? '艾宾浩斯' : '刷词模式')
+      : SESSION_LABEL[session.kind];
   document.getElementById('swipe-hint').textContent =
     state.display === 'direct' ? '← 左滑下一个 · 右滑上一个' : '← 左滑下一个 · 点击卡片看释义';
   document.getElementById('swipe-counter').textContent =
     (session.pos + 1) + ' / ' + session.queue.length;
+  syncMarkButton();
 
   speak(w.word);
 }
@@ -183,7 +216,7 @@ function markCurrentDone() {
   if (!e) return;
   // 刷词模式: 划过即完成; 艾宾浩斯: 最后一次出现才算完成
   const isLast = state.mode === 'swipe' || session.lastOcc[e.idx] === session.pos;
-  if (isLast && !session.isReviewSet) state.doneMap[session.words[e.idx].word] = 1;
+  if (isLast && !session.noProgress) state.doneMap[session.words[e.idx].word] = 1;
 }
 
 function next(dir) { // dir: 1 下一个, -1 上一个
@@ -211,11 +244,14 @@ function next(dir) { // dir: 1 下一个, -1 上一个
 
 function endSession() {
   session.active = false;
-  speechSynthesis && speechSynthesis.cancel();
+  stopSpeak();
+  const kind = session.kind;
   const all = wordList();
   const doneCount = Object.keys(state.doneMap).length;
 
-  if (!session.isReviewSet && doneCount >= all.length) {
+  if (kind === 'marked') {
+    showDoneOverlay('标记词背诵结束！\n本次共 ' + session.words.length + ' 个标记词');
+  } else if (kind === 'remain' && doneCount >= all.length) {
     // 本轮全部完成 -> 下一轮
     state.round += 1;
     state.doneMap = {};
@@ -231,6 +267,7 @@ function endSession() {
 /* ---------- 滑动手势 ---------- */
 (function initGestures() {
   const card = document.getElementById('word-card');
+  const SWIPE_THRESHOLD = 60; // 滑动判定阈值(原先只在 touchend 内声明, 鼠标分支引用会抛错)
   let sx = 0, sy = 0, dx = 0, dy = 0, dragging = false;
 
   card.addEventListener('touchstart', e => {
@@ -253,9 +290,8 @@ function endSession() {
     dragging = false;
     card.style.transition = '';
     card.style.transform = '';
-    const TH = 60;
-    if (dx < -TH) next(1);        // 左滑 -> 下一个
-    else if (dx > TH) next(-1);   // 右滑 -> 上一个
+    if (dx < -SWIPE_THRESHOLD) next(1);        // 左滑 -> 下一个
+    else if (dx > SWIPE_THRESHOLD) next(-1);   // 右滑 -> 上一个
     // 轻点翻面交给 click 事件处理
   });
 
@@ -265,7 +301,7 @@ function endSession() {
   window.addEventListener('mouseup', e => {
     if (mdx === null) return;
     const d = e.clientX - mdx; mdx = null;
-    if (d < -TH) next(1); else if (d > TH) next(-1);
+    if (d < -SWIPE_THRESHOLD) next(1); else if (d > SWIPE_THRESHOLD) next(-1);
   });
 
   // 翻面: 用 click 事件(桌面/手机都可靠); 滑动后短暂忽略防误翻
@@ -287,6 +323,12 @@ function refreshHome() {
   document.getElementById('home-progress').style.width = pct + '%';
   document.getElementById('home-progress-text').textContent =
     '第 ' + state.round + ' 轮 · 进度 ' + done + '/' + all.length + ' (' + pct.toFixed(1) + '%)';
+  refreshMarkedCount();
+}
+
+function refreshMarkedCount() {
+  const el = document.getElementById('marked-count');
+  if (el) el.textContent = markedWords().length;
 }
 
 /* ---------- 页面切换 ---------- */
@@ -327,39 +369,72 @@ document.getElementById('done-overlay-btn')?.addEventListener('click', () => {
   showPage('home');
 });
 
+/* ---------- 点按处理: 去重 / 反馈 ---------- */
+// 手机上同时绑 touchend 和 click 时, 同一次点按可能触发两次,
+// 对"标记"这种切换型操作就会连切两次而看起来完全没反应。
+// 这里统一处理: touchend 立即执行, 并抑制紧随其后的合成 click。
+function bindTap(el, handler) {
+  if (!el) return;
+  let suppressClickUntil = 0;
+  el.addEventListener('touchend', e => {
+    e.preventDefault();
+    suppressClickUntil = Date.now() + 700;
+    handler(e);
+  }, { passive: false });
+  el.addEventListener('click', e => {
+    if (Date.now() < suppressClickUntil) return;
+    handler(e);
+  });
+}
+
+let toastTimer = null;
+function toast(msg) {
+  const el = document.getElementById('toast');
+  if (!el) return;
+  el.textContent = msg;
+  el.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove('show'), 1500);
+}
+
+/* 标记按钮状态: 当前词已标记时高亮 */
+function syncMarkButton() {
+  const btn = document.getElementById('btn-mark');
+  if (!btn) return;
+  const e = session.active ? curEntry() : null;
+  const on = !!(e && state.marked[session.words[e.idx].word]);
+  btn.classList.toggle('active', on);
+  btn.textContent = on ? '★ 已标记' : '⭐ 标记';
+}
+
+function toggleMark() {
+  if (!session.active) return;
+  const e = curEntry();
+  if (!e) return;
+  const w = session.words[e.idx];
+  const on = !state.marked[w.word];
+  if (on) state.marked[w.word] = 1; else delete state.marked[w.word];
+  saveState();
+  syncMarkButton();
+  refreshMarkedCount();
+  toast(on ? '⭐ 已标记 ' + w.word : '已取消标记 ' + w.word);
+}
+
 /* ---------- 事件绑定 ---------- */
 function goHome() {
   session.active = false;
-  speechSynthesis && speechSynthesis.cancel();
+  stopSpeak();
   refreshHome();
   showPage('home');
 }
-document.getElementById('btn-start-remain').addEventListener('click', () => startSession(false));
-document.getElementById('btn-start-done').addEventListener('click', () => startSession(true));
-// 手机上部分浏览器 click 不可靠, 同时绑 touchend (preventDefault 防止触发两次)
-document.getElementById('btn-back-home').addEventListener('click', goHome);
-document.getElementById('btn-back-home').addEventListener('touchend', e => {
-  e.preventDefault();
-  goHome();
-});
-// 底部按钮同样加固
-['btn-prev', 'btn-next', 'btn-mark'].forEach(id => {
-  const b = document.getElementById(id);
-  if (!b) return;
-  const act = () => {
-    if (id === 'btn-prev') next(-1);
-    else if (id === 'btn-next') next(1);
-    else {
-      const e = curEntry(); if (!e) return;
-      const word = session.words[e.idx].word;
-      if (state.marked[word]) delete state.marked[word];
-      else state.marked[word] = 1;
-      saveState();
-    }
-  };
-  b.addEventListener('touchend', e => { e.preventDefault(); act(); });
-  b.addEventListener('click', act); // 桌面鼠标
-});
+document.getElementById('btn-start-remain').addEventListener('click', () => startSession('remain'));
+document.getElementById('btn-start-marked').addEventListener('click', () => startSession('marked'));
+document.getElementById('btn-start-done').addEventListener('click', () => startSession('done'));
+// 手机上部分浏览器 click 不可靠, 统一用 bindTap 绑 touchend + click (不会重复触发)
+bindTap(document.getElementById('btn-back-home'), goHome);
+bindTap(document.getElementById('btn-prev'), () => next(-1));
+bindTap(document.getElementById('btn-next'), () => next(1));
+bindTap(document.getElementById('btn-mark'), toggleMark);
 document.getElementById('btn-speak').addEventListener('click', e => {
   e.stopPropagation();
   const w = curEntry(); if (w) speak(session.words[w.idx].word);
@@ -378,7 +453,7 @@ document.querySelectorAll('input[name=wordlist]').forEach(r =>
     state.wordlist = r.value;
     saveState();
     session.active = false;
-    speechSynthesis && speechSynthesis.cancel();
+    stopSpeak();
     refreshHome();
     showPage('home');
   }));
