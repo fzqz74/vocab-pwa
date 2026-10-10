@@ -17,8 +17,8 @@
   <!-- ========== 首页 ========== -->
   <div id="page-home" class="page active">
     <header class="app-header">
-      <h1>六级高频词汇</h1>
-      <p class="subtitle">CET-6 High Frequency · 按考频排序</p>
+      <h1 id="app-title">六级高频词汇</h1>
+      <p class="subtitle" id="app-subtitle">CET-6 High Frequency · 按考频排序</p>
     </header>
     <div class="home-stats">
       <div class="stat-card" id="stat-total">
@@ -142,6 +142,13 @@
             <span class="radio-desc">3991 个六级全部词汇（含基础词），按词频排序</span>
           </span>
         </label>
+        <label class="radio-item">
+          <input type="radio" name="wordlist" value="zsb">
+          <span class="radio-label">
+            <span class="radio-title">专升本必背词</span>
+            <span class="radio-desc">3215 个专升本（专插本）大纲必背词，按词频排序</span>
+          </span>
+        </label>
       </div>
       <div class="settings-group">
         <h3>卡片显示</h3>
@@ -169,15 +176,16 @@
       </div>
       <div class="settings-group">
         <h3>数据管理</h3>
-        <button class="btn btn-danger btn-block" id="btn-reset">重置所有进度</button>
+        <button class="btn btn-secondary btn-block" id="btn-clear-marked">清空所有标记词</button>
+        <button class="btn btn-danger btn-block" id="btn-reset" style="margin-top:10px">重置所有进度</button>
       </div>
       <div class="settings-group">
         <h3>关于</h3>
         <p class="about-text">
-          词库来源：KyleBing/english-vocabulary 六级词表（GitHub 开源）<br>
+          词库来源：KyleBing/english-vocabulary 六级词表、qwerty-learner 专升本词表（均为 GitHub 开源）<br>
           音标来源：有道 CET6 词书（kajweb/dict 开源整理）<br>
-          排序方式：按 Google Books 英语词频降序（近似考频），已剔除初中/高中/四级基础词<br>
-          词库规模：1887 个六级核心词<br>
+          排序方式：按 Google Books 英语词频降序（近似考频），六级核心版已剔除初中/高中/四级基础词<br>
+          词库规模：六级核心 1887 词 / 六级完整 3991 词 / 专升本 3215 词<br>
           数据存储：本地浏览器（离线可用）<br>
           技术方案：PWA（可添加到桌面）
         </p>
@@ -208,6 +216,7 @@
 
   <script src="js/words.js"></script>
   <script src="js/words_full.js"></script>
+  <script src="js/words_zsb.js"></script>
   <script src="js/app.js"></script>
 </body>
 </html>

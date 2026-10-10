@@ -1,11 +1,12 @@
 /* 离线缓存: 首次访问后所有资源本地化, 无网络可用 */
-const CACHE = 'cet6-vocab-v10';
+const CACHE = 'cet6-vocab-v11';
 const ASSETS = [
   './',
   'index.html',
   'css/style.css',
   'js/words.js',
   'js/words_full.js',
+  'js/words_zsb.js',
   'js/app.js',
   'manifest.json',
   'icons/icon-192.png',

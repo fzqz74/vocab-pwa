@@ -17,7 +17,7 @@ function normalizeState(s) {
   return {
     mode: s.mode === 'ebbinghaus' ? 'ebbinghaus' : 'swipe',
     display: s.display === 'direct' ? 'direct' : 'flip',
-    wordlist: s.wordlist === 'full' ? 'full' : 'core',
+    wordlist: (s.wordlist === 'full' || s.wordlist === 'zsb') ? s.wordlist : 'core',
     round: Number(s.round) || 1,
     dailyGoal: Number(s.dailyGoal) || 50,
     doneMap: (s.doneMap && typeof s.doneMap === 'object') ? s.doneMap : {},
@@ -31,7 +31,9 @@ function saveState() {
 
 /* 当前词表 */
 function wordList() {
-  return state.wordlist === 'full' ? CET6_WORDS_FULL : CET6_WORDS;
+  if (state.wordlist === 'full') return CET6_WORDS_FULL;
+  if (state.wordlist === 'zsb' && typeof ZSB_WORDS !== 'undefined') return ZSB_WORDS;
+  return CET6_WORDS;
 }
 
 /* ---------- 艾宾浩斯间隔(一轮内重复出现) ---------- */
@@ -43,27 +45,28 @@ const EBINGHAUS_GAPS = [4, 10]; // 新词之后第4个、第10个位置再现
  * 返回 [{idx, review}] idx=词在列表中的下标, review=是否复习出现
  */
 function buildEbbinghausQueue(n) {
-  if (n === 0) return [];
+  if (n === 0) return { queue: [], lastOcc: [] };
   const lastGap = EBINGHAUS_GAPS.reduce((a, b) => a + b, 0); // 累计总偏移
   const slots = n + lastGap + 1;
   const events = Array.from({ length: slots }, () => []);
-  const lastOcc = new Array(n).fill(0);
   for (let i = 0; i < n; i++) {
     events[i].push({ idx: i, review: false });
-    lastOcc[i] = i;
     let cum = 0;
     EBINGHAUS_GAPS.forEach(g => {
       cum += g;
       const pos = i + cum;
-      if (pos < slots) {
-        events[pos].push({ idx: i, review: true });
-        lastOcc[i] = Math.max(lastOcc[i], pos);
-      }
+      if (pos < slots) events[pos].push({ idx: i, review: true });
     });
   }
+  // 空槽被压缩后, lastOcc 必须记"队列下标"而不是槽位下标:
+  // markCurrentDone 里用 lastOcc[e.idx] === session.pos 判断最后一次出现,
+  // 之前存槽位下标导致两者永不相等, 艾宾浩斯模式下进度几乎不记录。
   const queue = [];
-  events.forEach(evts => evts.forEach(e => queue.push(e)));
-  // 压缩尾部空槽
+  const lastOcc = new Array(n).fill(-1);
+  events.forEach(evts => evts.forEach(e => {
+    lastOcc[e.idx] = queue.length;
+    queue.push(e);
+  }));
   return { queue, lastOcc };
 }
 
@@ -134,16 +137,20 @@ const session = {
 
 const SESSION_LABEL = { remain: '刷词模式', done: '复习模式', marked: '标记词' };
 
-/* 标记词集合: 当前词表的标记词在前, 再补上另一词表里标过的词 */
+/* 标记词集合: 当前词表的标记词在前, 再补上其它词表里标过的词 */
 function markedWords() {
   const seen = new Set();
   const out = [];
   const push = w => {
     if (w && state.marked[w.word] && !seen.has(w.word)) { seen.add(w.word); out.push(w); }
   };
-  wordList().forEach(push);
-  const other = state.wordlist === 'full' ? CET6_WORDS : CET6_WORDS_FULL;
-  if (typeof other !== 'undefined' && other) other.forEach(push);
+  const lists = [
+    wordList(),
+    CET6_WORDS,
+    CET6_WORDS_FULL,
+    typeof ZSB_WORDS !== 'undefined' ? ZSB_WORDS : null,
+  ];
+  lists.forEach(list => { if (list) list.forEach(push); });
   return out;
 }
 
@@ -313,9 +320,19 @@ function endSession() {
 })();
 
 /* ---------- 首页刷新 ---------- */
+/* 首页标题随所选词表变化, 避免选了专升本词表仍显示"六级" */
+const HOME_META = {
+  core: ['六级高频词汇', 'CET-6 High Frequency · 按考频排序'],
+  full: ['六级完整词汇', 'CET-6 Full List · 按词频排序'],
+  zsb: ['专升本必背词', '专升本大纲必背词 · 按词频排序'],
+};
+
 function refreshHome() {
   const all = wordList();
   const done = Object.keys(state.doneMap).length;
+  const meta = HOME_META[state.wordlist] || HOME_META.core;
+  document.getElementById('app-title').textContent = meta[0];
+  document.getElementById('app-subtitle').textContent = meta[1];
   document.getElementById('stat-total-num').textContent = all.length;
   document.getElementById('stat-done-num').textContent = done;
   document.getElementById('stat-remain-num').textContent = all.length - done;
@@ -472,7 +489,22 @@ document.getElementById('btn-reset').addEventListener('click', () => {
     localStorage.removeItem(STATE_KEY);
     Object.assign(state, normalizeState({}));
     document.querySelector('input[name=mode][value=' + state.mode + ']').checked = true;
+    document.querySelector('input[name=display][value=' + state.display + ']').checked = true;
+    document.querySelector('input[name=wordlist][value=' + state.wordlist + ']').checked = true;
     refreshHome();
+  }
+});
+
+/* 一键清空所有标记词(不影响背诵进度) */
+document.getElementById('btn-clear-marked').addEventListener('click', () => {
+  const n = Object.keys(state.marked).length;
+  if (!n) { toast('当前没有标记词'); return; }
+  if (confirm('确定清空所有标记词吗？\n共 ' + n + ' 个，清空后不可恢复。')) {
+    state.marked = {};
+    saveState();
+    syncMarkButton();
+    refreshMarkedCount();
+    toast('已清空 ' + n + ' 个标记词');
   }
 });
 
@@ -487,6 +519,7 @@ function prefetchAudio() {
   const set = new Set();
   CET6_WORDS.forEach(w => set.add(w.word));
   if (typeof CET6_WORDS_FULL !== 'undefined') CET6_WORDS_FULL.forEach(w => set.add(w.word));
+  if (typeof ZSB_WORDS !== 'undefined') ZSB_WORDS.forEach(w => set.add(w.word));
   const words = [...set];
   let i = 0;
   const worker = async () => {
