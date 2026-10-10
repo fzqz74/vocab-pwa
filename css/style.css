@@ -339,6 +339,19 @@ html, body {
   gap: 12px;
   padding: 14px 16px 26px;
 }
+
+/* ===== 标记词复习评分条(跨天艾宾浩斯) ===== */
+.grade-bar {
+  gap: 12px;
+  padding: 0 16px 2px;
+}
+.grade-bar .btn { flex: 1; }
+.grade-bar #btn-grade-again {
+  background: rgba(255,80,80,.15);
+  border: 1px solid rgba(255,80,80,.4);
+  color: #ff8a8a;
+}
+
 .swipe-footer #btn-prev,
 .swipe-footer #btn-mark {
   background: rgba(255,255,255,.1);

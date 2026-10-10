@@ -22,6 +22,7 @@ function normalizeState(s) {
     dailyGoal: Number(s.dailyGoal) || 50,
     doneMap: (s.doneMap && typeof s.doneMap === 'object') ? s.doneMap : {},
     marked: (s.marked && typeof s.marked === 'object') ? s.marked : {},
+    markedSchedule: (s.markedSchedule && typeof s.markedSchedule === 'object') ? s.markedSchedule : {},
   };
 }
 
@@ -135,7 +136,7 @@ const session = {
   noProgress: false, // 复习/标记模式只读, 不写入背诵进度
 };
 
-const SESSION_LABEL = { remain: '刷词模式', done: '复习模式', marked: '标记词' };
+const SESSION_LABEL = { remain: '刷词模式', done: '复习模式', marked: '标记词复习' };
 
 /* 标记词集合: 当前词表的标记词在前, 再补上其它词表里标过的词 */
 function markedWords() {
@@ -154,11 +155,80 @@ function markedWords() {
   return out;
 }
 
+/* ---------- 标记词艾宾浩斯复习计划(跨天间隔) ---------- */
+/* 间隔参考艾宾浩斯遗忘曲线: 12小时 → 1天 → 2天 → 4天 → 7天 → 15天 → 30天
+   标记词不再只做"一轮内重复", 而是按真实时间安排下一次复习。 */
+const REVIEW_INTERVALS = [
+  12 * 3600e3,
+  1 * 86400e3,
+  2 * 86400e3,
+  4 * 86400e3,
+  7 * 86400e3,
+  15 * 86400e3,
+  30 * 86400e3,
+];
+
+function scheduleOf(word) {
+  const s = state.markedSchedule && state.markedSchedule[word];
+  return (s && typeof s === 'object') ? s : null;
+}
+
+/* 标记一个词时建立复习计划; 已存在则原样返回 */
+function ensureSchedule(word, now) {
+  now = now || Date.now();
+  let s = scheduleOf(word);
+  if (!s) {
+    s = { stage: 0, due: now + REVIEW_INTERVALS[0], lapses: 0, last: now };
+    state.markedSchedule[word] = s;
+  }
+  return s;
+}
+
+function humanInterval(ms) {
+  if (ms >= 86400e3) return Math.round(ms / 86400e3) + ' 天';
+  if (ms >= 3600e3) return Math.round(ms / 3600e3) + ' 小时';
+  return Math.max(1, Math.round(ms / 60000)) + ' 分钟';
+}
+
+/* 已到期待复习的标记词(历史遗留的、没有计划的标记词视为立即到期) */
+function isDueNow(word, now) {
+  const s = scheduleOf(word);
+  return !s || !(s.due > now);
+}
+
+function markedScheduleStats(now) {
+  now = now || Date.now();
+  const words = markedWords();
+  let due = 0, nextDue = null;
+  words.forEach(w => {
+    const s = scheduleOf(w.word);
+    if (!s || !(s.due > now)) due++;
+    else if (nextDue === null || s.due < nextDue) nextDue = s.due;
+  });
+  return { total: words.length, due: due, nextDue: nextDue };
+}
+
+/* 复习队列: 到期的在前, 未到期的在后, 组内按到期时间升序 */
+function markedReviewQueue(now) {
+  now = now || Date.now();
+  const items = markedWords().map(w => {
+    const s = scheduleOf(w.word);
+    return { w: w, due: (s && typeof s.due === 'number') ? s.due : 0 };
+  });
+  const due = items.filter(x => x.due <= now).sort((a, b) => a.due - b.due).map(x => x.w);
+  const later = items.filter(x => x.due > now).sort((a, b) => a.due - b.due).map(x => x.w);
+  return { due: due, later: later };
+}
+
 function startSession(kind) {
   const all = wordList();
   let list;
-  if (kind === 'marked') list = markedWords();
-  else if (kind === 'done') list = all.filter(w => state.doneMap[w.word]);
+  let dueSet = null;
+  if (kind === 'marked') {
+    const rq = markedReviewQueue();
+    list = rq.due.concat(rq.later);
+    dueSet = new Set(rq.due.map(w => w.word));
+  } else if (kind === 'done') list = all.filter(w => state.doneMap[w.word]);
   else list = all.filter(w => !state.doneMap[w.word]);
 
   if (!list.length) {
@@ -171,7 +241,11 @@ function startSession(kind) {
   session.kind = kind;
   session.noProgress = (kind !== 'remain');
   session.words = list;
-  if (state.mode === 'ebbinghaus') {
+  if (kind === 'marked') {
+    // 标记词走"跨天间隔复习": 本轮每个词只出现一次, 由记住/没记住评分推进间隔
+    session.queue = list.map((w, i) => ({ idx: i, review: dueSet.has(w.word) }));
+    session.lastOcc = null;
+  } else if (state.mode === 'ebbinghaus') {
     const { queue, lastOcc } = buildEbbinghausQueue(list.length);
     session.queue = queue;
     session.lastOcc = lastOcc;
@@ -203,14 +277,28 @@ function renderCard() {
   document.getElementById('word-meaning').textContent = w.meaning || '';
 
   const badge = document.getElementById('review-badge');
-  badge.classList.toggle('show', !!e.review);
+  if (session.kind === 'marked') {
+    const st = scheduleOf(w.word);
+    const stage = st ? (Number(st.stage) || 0) : 0;
+    badge.textContent = e.review
+      ? '⏰ 到期复习'
+      : (stage > 0 ? '🔁 第 ' + (stage + 1) + ' 次复习' : '⭐ 已标记');
+    badge.classList.add('show');
+  } else {
+    badge.textContent = '🔁 复习';
+    badge.classList.toggle('show', !!e.review);
+  }
 
   document.getElementById('swipe-mode-label').textContent =
     session.kind === 'remain'
       ? (state.mode === 'ebbinghaus' ? '艾宾浩斯' : '刷词模式')
       : SESSION_LABEL[session.kind];
   document.getElementById('swipe-hint').textContent =
-    state.display === 'direct' ? '← 左滑下一个 · 右滑上一个' : '← 左滑下一个 · 点击卡片看释义';
+    session.kind === 'marked'
+      ? '「没记住」本轮稍后重现 · 「记住了」进入下一复习间隔'
+      : (state.display === 'direct' ? '← 左滑下一个 · 右滑上一个' : '← 左滑下一个 · 点击卡片看释义');
+  const gradeBar = document.getElementById('grade-bar');
+  if (gradeBar) gradeBar.style.display = session.kind === 'marked' ? 'flex' : 'none';
   document.getElementById('swipe-counter').textContent =
     (session.pos + 1) + ' / ' + session.queue.length;
   syncMarkButton();
@@ -224,6 +312,31 @@ function markCurrentDone() {
   // 刷词模式: 划过即完成; 艾宾浩斯: 最后一次出现才算完成
   const isLast = state.mode === 'swipe' || session.lastOcc[e.idx] === session.pos;
   if (isLast && !session.noProgress) state.doneMap[session.words[e.idx].word] = 1;
+}
+
+/* 标记词评分: 记住了 -> 推进到下一间隔; 没记住 -> 回到第一间隔并本轮稍后重现 */
+function gradeMarked(ok) {
+  if (!session.active || session.kind !== 'marked') return;
+  const e = curEntry();
+  if (!e) return;
+  const w = session.words[e.idx];
+  const now = Date.now();
+  const s = ensureSchedule(w.word, now);
+  s.last = now;
+  if (ok) {
+    s.stage = Math.min((Number(s.stage) || 0) + 1, REVIEW_INTERVALS.length - 1);
+    s.due = now + REVIEW_INTERVALS[s.stage];
+    toast('✅ 记住了 · ' + humanInterval(REVIEW_INTERVALS[s.stage]) + '后再复习');
+  } else {
+    s.stage = 0;
+    s.due = now + REVIEW_INTERVALS[0];
+    s.lapses = (Number(s.lapses) || 0) + 1;
+    session.queue.push({ idx: e.idx, review: true }); // 本轮稍后再出现一次
+    toast('😖 没记住 · 本轮稍后再复习');
+  }
+  saveState();
+  refreshHome();
+  next(1);
 }
 
 function next(dir) { // dir: 1 下一个, -1 上一个
@@ -341,6 +454,13 @@ function refreshHome() {
   document.getElementById('home-progress-text').textContent =
     '第 ' + state.round + ' 轮 · 进度 ' + done + '/' + all.length + ' (' + pct.toFixed(1) + '%)';
   refreshMarkedCount();
+  const rs = markedScheduleStats();
+  const planEl = document.getElementById('review-plan-text');
+  if (planEl) {
+    planEl.textContent = rs.total
+      ? ('标记词 ' + rs.total + ' 个 · 今日待复习 ' + rs.due + ' 个')
+      : '标记词 0 个 · 标记后按艾宾浩斯间隔自动安排复习';
+  }
 }
 
 function refreshMarkedCount() {
@@ -430,10 +550,15 @@ function toggleMark() {
   if (!e) return;
   const w = session.words[e.idx];
   const on = !state.marked[w.word];
-  if (on) state.marked[w.word] = 1; else delete state.marked[w.word];
+  if (on) { state.marked[w.word] = 1; ensureSchedule(w.word); }
+  else {
+    delete state.marked[w.word];
+    if (state.markedSchedule) delete state.markedSchedule[w.word];
+  }
   saveState();
   syncMarkButton();
   refreshMarkedCount();
+  refreshHome();
   toast(on ? '⭐ 已标记 ' + w.word : '已取消标记 ' + w.word);
 }
 
@@ -452,6 +577,8 @@ bindTap(document.getElementById('btn-back-home'), goHome);
 bindTap(document.getElementById('btn-prev'), () => next(-1));
 bindTap(document.getElementById('btn-next'), () => next(1));
 bindTap(document.getElementById('btn-mark'), toggleMark);
+bindTap(document.getElementById('btn-grade-again'), () => gradeMarked(false));
+bindTap(document.getElementById('btn-grade-good'), () => gradeMarked(true));
 document.getElementById('btn-speak').addEventListener('click', e => {
   e.stopPropagation();
   const w = curEntry(); if (w) speak(session.words[w.idx].word);
@@ -501,9 +628,11 @@ document.getElementById('btn-clear-marked').addEventListener('click', () => {
   if (!n) { toast('当前没有标记词'); return; }
   if (confirm('确定清空所有标记词吗？\n共 ' + n + ' 个，清空后不可恢复。')) {
     state.marked = {};
+    state.markedSchedule = {};
     saveState();
     syncMarkButton();
     refreshMarkedCount();
+    refreshHome();
     toast('已清空 ' + n + ' 个标记词');
   }
 });
