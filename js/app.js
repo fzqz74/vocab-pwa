@@ -421,6 +421,16 @@ function startSession(kind) {
 
 function curEntry() { return session.queue[session.pos]; }
 
+/* 卡片计数使用当前词表中的绝对位置，而不是本次筛选队列中的位置。 */
+function wordPositionInList(word) {
+  const all = wordList();
+  const index = all.findIndex(item => item.word === word.word);
+  return {
+    current: index >= 0 ? index + 1 : session.pos + 1,
+    total: all.length,
+  };
+}
+
 function renderCard() {
   const e = curEntry();
   if (!e) return endSession();
@@ -484,8 +494,9 @@ function renderCard() {
   if (gradeBar) {
     gradeBar.style.display = intervalReview ? 'flex' : 'none';
   }
+  const position = wordPositionInList(w);
   document.getElementById('swipe-counter').textContent =
-    (session.pos + 1) + ' / ' + session.queue.length;
+    position.current + ' / ' + position.total;
   syncMarkButton();
 
   speak(w.word);
