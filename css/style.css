@@ -27,6 +27,8 @@ html, body {
 .page.active { display: flex; }
 
 /* ===== 首页 ===== */
+#page-home { overflow-y: auto; }
+
 .app-header {
   text-align: center;
   padding: 28px 16px 12px;
@@ -106,6 +108,96 @@ html, body {
   gap: 12px;
 }
 
+/* ===== 独立艾宾浩斯复习模块 ===== */
+.review-module {
+  margin: 8px 16px 0;
+  padding: 16px;
+  border: 1px solid rgba(124,92,255,.35);
+  border-radius: 18px;
+  background:
+    radial-gradient(circle at 100% 0, rgba(92,225,230,.12), transparent 45%),
+    linear-gradient(145deg, rgba(124,92,255,.16), rgba(255,255,255,.055));
+  box-shadow: 0 10px 30px rgba(0,0,0,.16);
+}
+.module-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.module-head h2 {
+  font-size: 17px;
+  font-weight: 700;
+}
+.module-head p {
+  margin-top: 4px;
+  font-size: 12px;
+  color: rgba(255,255,255,.52);
+}
+.daily-goal-control {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  border: 1px solid rgba(255,255,255,.13);
+  border-radius: 12px;
+  overflow: hidden;
+  background: rgba(10,10,25,.24);
+}
+.daily-goal-control button {
+  width: 32px;
+  height: 34px;
+  border: none;
+  background: rgba(255,255,255,.07);
+  color: #fff;
+  font-size: 18px;
+  cursor: pointer;
+}
+.daily-goal-control button:active { background: rgba(255,255,255,.16); }
+#daily-goal-input {
+  width: 46px;
+  height: 34px;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: #fff;
+  text-align: center;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 700;
+  -moz-appearance: textfield;
+}
+#daily-goal-input::-webkit-inner-spin-button,
+#daily-goal-input::-webkit-outer-spin-button {
+  margin: 0;
+  -webkit-appearance: none;
+}
+.daily-progress-row {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-top: 16px;
+}
+.daily-progress-row strong {
+  color: #5ce1e6;
+  font-size: 25px;
+  font-variant-numeric: tabular-nums;
+}
+.daily-progress-row span {
+  color: rgba(255,255,255,.48);
+  font-size: 12px;
+}
+.module-progress { margin-top: 8px; }
+.module-progress .progress-bar {
+  background: linear-gradient(90deg, #ff7a59, #ffc466);
+}
+.review-module .btn { margin-top: 14px; }
+.module-note {
+  margin-top: 10px;
+  font-size: 11px;
+  line-height: 1.55;
+  color: rgba(255,255,255,.4);
+}
+
 /* ===== 按钮 ===== */
 .btn {
   display: flex;
@@ -123,6 +215,12 @@ html, body {
   font-family: inherit;
 }
 .btn:active { transform: scale(.97); }
+.btn:disabled {
+  opacity: .42;
+  cursor: default;
+  box-shadow: none;
+}
+.btn:disabled:active { transform: none; }
 .btn-block { width: 100%; }
 .btn-primary {
   background: linear-gradient(135deg, #7c5cff, #5a3ff0);
@@ -340,7 +438,7 @@ html, body {
   padding: 14px 16px 26px;
 }
 
-/* ===== 标记词复习评分条(跨天艾宾浩斯) ===== */
+/* ===== 跨天复习评分条(标记词与艾宾浩斯复习) ===== */
 .grade-bar {
   gap: 12px;
   padding: 0 16px 2px;

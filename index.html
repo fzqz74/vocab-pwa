@@ -42,6 +42,28 @@
       <p class="progress-text" id="home-progress-text">第 0 轮 · 进度 0/0</p>
       <p class="progress-text" id="review-plan-text">标记词 0 个</p>
     </div>
+    <section class="review-module" id="ebbinghaus-module">
+      <div class="module-head">
+        <div>
+          <h2>艾宾浩斯复习</h2>
+          <p id="ebbinghaus-due-text">待复习 0 词 · 已安排 0 词</p>
+        </div>
+        <div class="daily-goal-control" aria-label="设置今日复习目标">
+          <button class="goal-step" id="goal-minus" type="button" aria-label="目标减少10词">−</button>
+          <input id="daily-goal-input" type="number" min="10" max="500" step="10" value="50" aria-label="今日复习目标">
+          <button class="goal-step" id="goal-plus" type="button" aria-label="目标增加10词">＋</button>
+        </div>
+      </div>
+      <div class="daily-progress-row">
+        <strong id="daily-review-progress">0/50</strong>
+        <span>今日已复习</span>
+      </div>
+      <div class="progress-bar-wrap module-progress">
+        <div class="progress-bar" id="daily-goal-progress"></div>
+      </div>
+      <button class="btn btn-accent btn-block" id="btn-start-ebbinghaus" type="button">暂无到期单词</button>
+      <p class="module-note">新词完成后自动安排：12小时 → 1天 → 2天 → 4天 → 7天 → 15天 → 30天</p>
+    </section>
     <div class="home-actions">
       <button class="btn btn-primary btn-block" id="btn-start-remain">
         <span class="btn-icon">📖</span>
@@ -116,23 +138,6 @@
     </header>
     <div class="settings-list">
       <div class="settings-group">
-        <h3>背词模式</h3>
-        <label class="radio-item">
-          <input type="radio" name="mode" value="swipe" checked>
-          <span class="radio-label">
-            <span class="radio-title">顺序刷词</span>
-            <span class="radio-desc">按考频顺序从第1个到最后1个，滑动切换</span>
-          </span>
-        </label>
-        <label class="radio-item">
-          <input type="radio" name="mode" value="ebbinghaus">
-          <span class="radio-label">
-            <span class="radio-title">艾宾浩斯复习</span>
-            <span class="radio-desc">基于遗忘曲线间隔重复，一轮内多次复习（标记词按真实时间跨天安排）</span>
-          </span>
-        </label>
-      </div>
-      <div class="settings-group">
         <h3>词表选择</h3>
         <label class="radio-item">
           <input type="radio" name="wordlist" value="core" checked>
@@ -174,13 +179,6 @@
         </label>
       </div>
       <div class="settings-group">
-        <h3>每日目标</h3>
-        <div class="slider-row">
-          <input type="range" id="daily-goal" min="10" max="200" step="10" value="50">
-          <span id="daily-goal-value">50 词/天</span>
-        </div>
-      </div>
-      <div class="settings-group">
         <h3>数据管理</h3>
         <button class="btn btn-secondary btn-block" id="btn-clear-marked">清空所有标记词</button>
         <button class="btn btn-danger btn-block" id="btn-reset" style="margin-top:10px">重置所有进度</button>
@@ -192,6 +190,7 @@
           音标来源：有道 CET6 词书（kajweb/dict 开源整理）<br>
           排序方式：按 Google Books 英语词频降序（近似考频），六级核心版已剔除初中/高中/四级基础词<br>
           词库规模：六级核心 1887 词 / 六级完整 3991 词 / 专升本 3215 词<br>
+          艾宾浩斯复习：新词完成后进入独立复习模块，按真实时间跨天安排（12小时 → 1天 → 2天 → 4天 → 7天 → 15天 → 30天），每日目标可在首页调整<br>
           标记词复习：按艾宾浩斯遗忘曲线跨天安排（12小时 → 1天 → 2天 → 4天 → 7天 → 15天 → 30天）<br>
           数据存储：本地浏览器（离线可用）<br>
           技术方案：PWA（可添加到桌面）
