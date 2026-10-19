@@ -450,6 +450,11 @@ html, body {
   display: none;
 }
 .review-badge.show { display: block; }
+.word-card.flipped .review-badge {
+  visibility: hidden;
+  opacity: 0;
+  pointer-events: none;
+}
 
 .swipe-hint {
   position: absolute;
