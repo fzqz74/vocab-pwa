@@ -35,14 +35,14 @@
       </div>
     </div>
     <div class="home-section">
-      <h2>开始背单词</h2>
+      <h2>开始背单词 <span class="mode-chip" id="home-mode-label">刷词模式</span></h2>
       <div class="progress-bar-wrap">
         <div class="progress-bar" id="home-progress"></div>
       </div>
       <p class="progress-text" id="home-progress-text">第 0 轮 · 进度 0/0</p>
       <p class="progress-text" id="review-plan-text">标记词 0 个</p>
     </div>
-    <section class="review-module" id="ebbinghaus-module">
+    <section class="review-module" id="ebbinghaus-module" data-mode-section="ebbinghaus">
       <div class="module-head">
         <div>
           <h2>艾宾浩斯复习</h2>
@@ -67,11 +67,11 @@
     <div class="home-actions">
       <button class="btn btn-primary btn-block" id="btn-start-remain">
         <span class="btn-icon">📖</span>
-        <span>背未完成的单词</span>
+        <span id="remain-action-label">背未完成的单词</span>
       </button>
       <button class="btn btn-secondary btn-block" id="btn-start-marked">
         <span class="btn-icon">⭐</span>
-        <span>背标记的单词</span>
+        <span id="marked-action-label">背刷词模式标记词</span>
         <span class="btn-badge" id="marked-count">0</span>
       </button>
       <button class="btn btn-secondary btn-block" id="btn-start-done">
@@ -138,6 +138,23 @@
     </header>
     <div class="settings-list">
       <div class="settings-group">
+        <h3>背词模式</h3>
+        <label class="radio-item">
+          <input type="radio" name="mode" value="swipe" checked>
+          <span class="radio-label">
+            <span class="radio-title">刷词模式</span>
+            <span class="radio-desc">按词表顺序浏览，单词每轮出现一次；这里的标记词独立保存</span>
+          </span>
+        </label>
+        <label class="radio-item">
+          <input type="radio" name="mode" value="ebbinghaus">
+          <span class="radio-label">
+            <span class="radio-title">艾宾浩斯模式</span>
+            <span class="radio-desc">显示今日到期复习和目标进度；这里的标记词与刷词模式互不影响</span>
+          </span>
+        </label>
+      </div>
+      <div class="settings-group">
         <h3>词表选择</h3>
         <label class="radio-item">
           <input type="radio" name="wordlist" value="core" checked>
@@ -180,7 +197,7 @@
       </div>
       <div class="settings-group">
         <h3>数据管理</h3>
-        <button class="btn btn-secondary btn-block" id="btn-clear-marked">清空所有标记词</button>
+        <button class="btn btn-secondary btn-block" id="btn-clear-marked">清空当前模式标记词</button>
         <button class="btn btn-danger btn-block" id="btn-reset" style="margin-top:10px">重置所有进度</button>
       </div>
       <div class="settings-group">
@@ -191,7 +208,7 @@
           排序方式：按 Google Books 英语词频降序（近似考频），六级核心版已剔除初中/高中/四级基础词<br>
           词库规模：六级核心 1887 词 / 六级完整 3991 词 / 专升本 3215 词<br>
           艾宾浩斯复习：新词完成后进入独立复习模块，按真实时间跨天安排（12小时 → 1天 → 2天 → 4天 → 7天 → 15天 → 30天），每日目标可在首页调整<br>
-          标记词复习：按艾宾浩斯遗忘曲线跨天安排（12小时 → 1天 → 2天 → 4天 → 7天 → 15天 → 30天）<br>
+          标记词复习：刷词模式和艾宾浩斯模式各自保存一套标记与复习计划，互不覆盖<br>
           数据存储：本地浏览器（离线可用）<br>
           技术方案：PWA（可添加到桌面）
         </p>

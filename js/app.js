@@ -5,6 +5,19 @@
 const STATE_KEY = 'cet6.state.v1';
 const state = loadState();
 
+const MODE_LABEL = {
+  swipe: '刷词模式',
+  ebbinghaus: '艾宾浩斯模式',
+};
+
+function normalizeMode(value) {
+  return value === 'ebbinghaus' ? 'ebbinghaus' : 'swipe';
+}
+
+function normalizeMap(value) {
+  return (value && typeof value === 'object' && !Array.isArray(value)) ? value : {};
+}
+
 function clampDailyGoal(value) {
   const n = Number(value);
   if (!Number.isFinite(n)) return 50;
@@ -38,14 +51,24 @@ function loadState() {
 }
 
 function normalizeState(s) {
+  const markedByMode = normalizeMap(s.markedByMode);
+  const markedScheduleByMode = normalizeMap(s.markedScheduleByMode);
   return {
+    mode: normalizeMode(s.mode),
     display: s.display === 'direct' ? 'direct' : 'flip',
     wordlist: (s.wordlist === 'full' || s.wordlist === 'zsb') ? s.wordlist : 'core',
     round: Number(s.round) || 1,
     dailyGoal: clampDailyGoal(s.dailyGoal),
     doneMap: (s.doneMap && typeof s.doneMap === 'object') ? s.doneMap : {},
-    marked: (s.marked && typeof s.marked === 'object') ? s.marked : {},
-    markedSchedule: (s.markedSchedule && typeof s.markedSchedule === 'object') ? s.markedSchedule : {},
+    markedByMode: {
+      // 旧版本的标记迁入刷词模式，避免升级后已有标记丢失。
+      swipe: normalizeMap(markedByMode.swipe || s.marked),
+      ebbinghaus: normalizeMap(markedByMode.ebbinghaus),
+    },
+    markedScheduleByMode: {
+      swipe: normalizeMap(markedScheduleByMode.swipe || s.markedSchedule),
+      ebbinghaus: normalizeMap(markedScheduleByMode.ebbinghaus),
+    },
     ebbinghausSchedule: (s.ebbinghausSchedule && typeof s.ebbinghausSchedule === 'object')
       ? s.ebbinghausSchedule : {},
     dailyReview: normalizeDailyReview(s.dailyReview),
@@ -121,6 +144,7 @@ let lastNavTime = 0; // 最近一次翻页时间, 防止滑动后误触发翻面
 const session = {
   active: false,
   kind: 'remain', // remain=背未完成 / done=复习已完成 / marked=标记词 / review=艾宾浩斯复习
+  markMode: 'swipe', // 当前会话对应哪一套独立标记
   words: [],      // 本轮会话的词对象列表
   queue: [],      // 播放队列 {idx, review}
   pos: 0,
@@ -134,12 +158,21 @@ const SESSION_LABEL = {
   review: '艾宾浩斯复习',
 };
 
-/* 标记词集合: 当前词表的标记词在前, 再补上其它词表里标过的词 */
-function markedWords() {
+function marksForMode(mode) {
+  return state.markedByMode[normalizeMode(mode || state.mode)];
+}
+
+function markedSchedulesForMode(mode) {
+  return state.markedScheduleByMode[normalizeMode(mode || state.mode)];
+}
+
+/* 当前模式的标记词集合: 当前词表在前, 再补上其它词表里标过的词 */
+function markedWords(mode) {
+  const marks = marksForMode(mode);
   const seen = new Set();
   const out = [];
   const push = w => {
-    if (w && state.marked[w.word] && !seen.has(w.word)) { seen.add(w.word); out.push(w); }
+    if (w && marks[w.word] && !seen.has(w.word)) { seen.add(w.word); out.push(w); }
   };
   const lists = [
     wordList(),
@@ -222,7 +255,7 @@ function ensureEbbinghausSchedule(word, now) {
 /* 独立的跨天复习队列: 已完成的词进入计划, 标记词交给标记词模块。 */
 function ebbinghausWords() {
   return allWordEntries().filter(w =>
-    ebbinghausScheduleOf(w.word) && !state.marked[w.word]
+    ebbinghausScheduleOf(w.word) && !marksForMode('ebbinghaus')[w.word]
   );
 }
 
@@ -265,18 +298,20 @@ function ebbinghausReviewQueue(now) {
     .slice(0, stats.remaining);
 }
 
-function scheduleOf(word) {
-  const s = state.markedSchedule && state.markedSchedule[word];
+function scheduleOf(word, mode) {
+  const schedules = markedSchedulesForMode(mode);
+  const s = schedules && schedules[word];
   return (s && typeof s === 'object') ? s : null;
 }
 
 /* 标记一个词时建立复习计划; 已存在则原样返回 */
-function ensureSchedule(word, now) {
+function ensureSchedule(word, now, mode) {
   now = now || Date.now();
-  let s = scheduleOf(word);
+  const schedules = markedSchedulesForMode(mode);
+  let s = scheduleOf(word, mode);
   if (!s) {
     s = { stage: 0, due: now + REVIEW_INTERVALS[0], lapses: 0, last: now };
-    state.markedSchedule[word] = s;
+    schedules[word] = s;
   }
   return s;
 }
@@ -288,17 +323,17 @@ function humanInterval(ms) {
 }
 
 /* 已到期待复习的标记词(历史遗留的、没有计划的标记词视为立即到期) */
-function isDueNow(word, now) {
-  const s = scheduleOf(word);
+function isDueNow(word, now, mode) {
+  const s = scheduleOf(word, mode);
   return !s || !(s.due > now);
 }
 
-function markedScheduleStats(now) {
+function markedScheduleStats(now, mode) {
   now = now || Date.now();
-  const words = markedWords();
+  const words = markedWords(mode);
   let due = 0, nextDue = null;
   words.forEach(w => {
-    const s = scheduleOf(w.word);
+    const s = scheduleOf(w.word, mode);
     if (!s || !(s.due > now)) due++;
     else if (nextDue === null || s.due < nextDue) nextDue = s.due;
   });
@@ -306,10 +341,10 @@ function markedScheduleStats(now) {
 }
 
 /* 复习队列: 到期的在前, 未到期的在后, 组内按到期时间升序 */
-function markedReviewQueue(now) {
+function markedReviewQueue(now, mode) {
   now = now || Date.now();
-  const items = markedWords().map(w => {
-    const s = scheduleOf(w.word);
+  const items = markedWords(mode).map(w => {
+    const s = scheduleOf(w.word, mode);
     return { w: w, due: (s && typeof s.due === 'number') ? s.due : 0 };
   });
   const due = items.filter(x => x.due <= now).sort((a, b) => a.due - b.due).map(x => x.w);
@@ -319,10 +354,11 @@ function markedReviewQueue(now) {
 
 function startSession(kind) {
   const all = wordList();
+  const markMode = kind === 'review' ? 'ebbinghaus' : normalizeMode(state.mode);
   let list;
   let dueSet = null;
   if (kind === 'marked') {
-    const rq = markedReviewQueue();
+    const rq = markedReviewQueue(Date.now(), markMode);
     list = rq.due.concat(rq.later);
     dueSet = new Set(rq.due.map(w => w.word));
   } else if (kind === 'review') {
@@ -332,7 +368,12 @@ function startSession(kind) {
   else list = all.filter(w => !state.doneMap[w.word]);
 
   if (!list.length) {
-    if (kind === 'marked') showDoneOverlay('还没有标记任何单词\n刷词时点底部「⭐ 标记」即可收藏', true);
+    if (kind === 'marked') {
+      showDoneOverlay(
+        '当前没有' + MODE_LABEL[markMode] + '标记词\n背词时点底部「⭐ 标记」即可收藏',
+        true
+      );
+    }
     else if (kind === 'done') showDoneOverlay('已完成词库是空的', true);
     else if (kind === 'review') {
       const stats = ebbinghausStats();
@@ -348,6 +389,7 @@ function startSession(kind) {
   }
 
   session.kind = kind;
+  session.markMode = markMode;
   session.noProgress = (kind !== 'remain');
   session.words = list;
   // 每轮只出现一次; 跨天重复由独立复习计划控制。
@@ -381,7 +423,7 @@ function renderCard() {
   const badge = document.getElementById('review-badge');
   if (session.kind === 'marked' || session.kind === 'review') {
     const st = session.kind === 'marked'
-      ? scheduleOf(w.word)
+      ? scheduleOf(w.word, session.markMode)
       : ebbinghausScheduleOf(w.word);
     const stage = st ? (Number(st.stage) || 0) : 0;
     badge.textContent = e.review
@@ -395,8 +437,10 @@ function renderCard() {
     badge.classList.toggle('show', !!e.review);
   }
 
-  document.getElementById('swipe-mode-label').textContent =
-    SESSION_LABEL[session.kind] || '刷词模式';
+  let sessionLabel = SESSION_LABEL[session.kind] || MODE_LABEL[session.markMode];
+  if (session.kind === 'remain') sessionLabel = MODE_LABEL[session.markMode];
+  if (session.kind === 'marked') sessionLabel = MODE_LABEL[session.markMode] + '标记词';
+  document.getElementById('swipe-mode-label').textContent = sessionLabel;
   document.getElementById('swipe-hint').textContent =
     (session.kind === 'marked' || session.kind === 'review')
       ? '「没记住」回到 12 小时 · 「记住了」进入下一复习间隔'
@@ -431,7 +475,7 @@ function gradeMarked(ok) {
   if (!e) return;
   const w = session.words[e.idx];
   const now = Date.now();
-  const s = ensureSchedule(w.word, now);
+  const s = ensureSchedule(w.word, now, session.markMode);
   s.last = now;
   if (ok) {
     s.stage = Math.min((Number(s.stage) || 0) + 1, REVIEW_INTERVALS.length - 1);
@@ -589,6 +633,7 @@ const HOME_META = {
 };
 
 function refreshHome() {
+  applyModeUI();
   const all = wordList();
   const done = Object.keys(state.doneMap).length;
   const meta = HOME_META[state.wordlist] || HOME_META.core;
@@ -606,8 +651,8 @@ function refreshHome() {
   const planEl = document.getElementById('review-plan-text');
   if (planEl) {
     planEl.textContent = rs.total
-      ? ('标记词 ' + rs.total + ' 个 · 今日待复习 ' + rs.due + ' 个')
-      : '标记词 0 个 · 标记后按艾宾浩斯间隔自动安排复习';
+      ? (MODE_LABEL[state.mode] + '标记 ' + rs.total + ' 个 · 今日待复习 ' + rs.due + ' 个')
+      : (MODE_LABEL[state.mode] + '标记 0 个 · 两套标记互不影响');
   }
   const es = ebbinghausStats();
   const dueText = document.getElementById('ebbinghaus-due-text');
@@ -628,6 +673,35 @@ function refreshHome() {
     reviewBtn.textContent = es.remaining === 0
       ? '今日目标已完成'
       : (es.due > 0 ? '开始今日复习 · ' + Math.min(es.due, es.remaining) + ' 词' : '暂无到期单词');
+  }
+}
+
+function applyModeUI() {
+  const isEbbinghaus = state.mode === 'ebbinghaus';
+  const module = document.getElementById('ebbinghaus-module');
+  if (module) module.hidden = !isEbbinghaus;
+
+  const modeLabel = document.getElementById('home-mode-label');
+  if (modeLabel) modeLabel.textContent = MODE_LABEL[state.mode];
+
+  const remainLabel = document.getElementById('remain-action-label');
+  if (remainLabel) {
+    remainLabel.textContent = isEbbinghaus
+      ? '学习新词并建立复习计划'
+      : '背未完成的单词';
+  }
+
+  const markedLabel = document.getElementById('marked-action-label');
+  if (markedLabel) {
+    markedLabel.textContent = isEbbinghaus
+      ? '背艾宾浩斯标记词'
+      : '背刷词模式标记词';
+  }
+
+  const clearButton = document.getElementById('btn-clear-marked');
+  if (clearButton) {
+    const count = markedWords().length;
+    clearButton.textContent = '清空' + MODE_LABEL[state.mode] + '标记词（' + count + '）';
   }
 }
 
@@ -707,7 +781,8 @@ function syncMarkButton() {
   const btn = document.getElementById('btn-mark');
   if (!btn) return;
   const e = session.active ? curEntry() : null;
-  const on = !!(e && state.marked[session.words[e.idx].word]);
+  const marks = marksForMode(session.markMode);
+  const on = !!(e && marks[session.words[e.idx].word]);
   btn.classList.toggle('active', on);
   btn.textContent = on ? '★ 已标记' : '⭐ 标记';
 }
@@ -717,17 +792,22 @@ function toggleMark() {
   const e = curEntry();
   if (!e) return;
   const w = session.words[e.idx];
-  const on = !state.marked[w.word];
-  if (on) { state.marked[w.word] = 1; ensureSchedule(w.word); }
+  const marks = marksForMode(session.markMode);
+  const schedules = markedSchedulesForMode(session.markMode);
+  const on = !marks[w.word];
+  if (on) { marks[w.word] = 1; ensureSchedule(w.word, null, session.markMode); }
   else {
-    delete state.marked[w.word];
-    if (state.markedSchedule) delete state.markedSchedule[w.word];
+    delete marks[w.word];
+    delete schedules[w.word];
   }
   saveState();
   syncMarkButton();
   refreshMarkedCount();
   refreshHome();
-  toast(on ? '⭐ 已标记 ' + w.word : '已取消标记 ' + w.word);
+  toast(
+    (on ? '⭐ 已加入' + MODE_LABEL[session.markMode] + '标记 · ' : '已从' +
+      MODE_LABEL[session.markMode] + '标记移除 · ') + w.word
+  );
 }
 
 /* ---------- 事件绑定 ---------- */
@@ -755,6 +835,15 @@ document.getElementById('btn-speak').addEventListener('click', e => {
 document.getElementById('btn-speak').addEventListener('touchend', e => e.stopPropagation());
 
 /* ---------- 设置 ---------- */
+document.querySelectorAll('input[name=mode]').forEach(r =>
+  r.addEventListener('change', () => {
+    state.mode = normalizeMode(r.value);
+    saveState();
+    session.active = false;
+    stopSpeak();
+    refreshHome();
+  }));
+
 document.querySelectorAll('input[name=display]').forEach(r =>
   r.addEventListener('change', () => { state.display = r.value; saveState(); }));
 
@@ -790,6 +879,7 @@ document.getElementById('btn-reset').addEventListener('click', () => {
   if (confirm('确定重置所有学习进度吗？此操作不可恢复。')) {
     localStorage.removeItem(STATE_KEY);
     Object.assign(state, normalizeState({}));
+    document.querySelector('input[name=mode][value=' + state.mode + ']').checked = true;
     document.querySelector('input[name=display][value=' + state.display + ']').checked = true;
     document.querySelector('input[name=wordlist][value=' + state.wordlist + ']').checked = true;
     if (goalInput) goalInput.value = state.dailyGoal;
@@ -799,16 +889,20 @@ document.getElementById('btn-reset').addEventListener('click', () => {
 
 /* 一键清空所有标记词(不影响背诵进度) */
 document.getElementById('btn-clear-marked').addEventListener('click', () => {
-  const n = Object.keys(state.marked).length;
-  if (!n) { toast('当前没有标记词'); return; }
-  if (confirm('确定清空所有标记词吗？\n共 ' + n + ' 个，清空后不可恢复。')) {
-    state.marked = {};
-    state.markedSchedule = {};
+  const mode = state.mode;
+  const marks = marksForMode(mode);
+  const schedules = markedSchedulesForMode(mode);
+  const n = Object.keys(marks).length;
+  if (!n) { toast('当前模式没有标记词'); return; }
+  if (confirm('确定清空' + MODE_LABEL[mode] + '的全部标记词吗？\n共 ' + n +
+    ' 个。另一模式的标记词会保留。')) {
+    state.markedByMode[mode] = {};
+    state.markedScheduleByMode[mode] = {};
     saveState();
     syncMarkButton();
     refreshMarkedCount();
     refreshHome();
-    toast('已清空 ' + n + ' 个标记词');
+    toast('已清空 ' + n + ' 个' + MODE_LABEL[mode] + '标记词');
   }
 });
 
@@ -842,6 +936,7 @@ if (localStorage.getItem('audio.prefetched') !== '1') {
 }
 
 /* ---------- 启动 ---------- */
+document.querySelector('input[name=mode][value=' + state.mode + ']').checked = true;
 document.querySelector('input[name=display][value=' + state.display + ']').checked = true;
 document.querySelector('input[name=wordlist][value=' + state.wordlist + ']').checked = true;
 refreshHome();
