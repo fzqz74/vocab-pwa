@@ -1009,7 +1009,23 @@ document.getElementById('btn-clear-marked').addEventListener('click', () => {
 
 /* ---------- Service Worker ---------- */
 if ('serviceWorker' in navigator && location.protocol !== 'file:') {
-  navigator.serviceWorker.register('sw.js').catch(() => {});
+  let swRegistration = null;
+  let refreshing = false;
+  const hadController = Boolean(navigator.serviceWorker.controller);
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (!hadController || refreshing) return;
+    refreshing = true;
+    location.reload();
+  });
+  navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).then(reg => {
+    swRegistration = reg;
+    reg.update().catch(() => {});
+  }).catch(() => {});
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible' && swRegistration) {
+      swRegistration.update().catch(() => {});
+    }
+  });
 }
 
 /* ---------- 发音预缓存: 首次打开后空闲时批量拉取, 之后离线可听 ---------- */

@@ -1,5 +1,5 @@
 /* 离线缓存: 首次访问后所有资源本地化, 无网络可用 */
-const CACHE = 'cet6-vocab-v16';
+const CACHE = 'cet6-vocab-v17';
 const ASSETS = [
   './',
   'index.html',
@@ -18,11 +18,23 @@ self.addEventListener('install', e => {
 });
 
 self.addEventListener('activate', e => {
-  e.waitUntil(
-    caches.keys()
-      .then(keys => Promise.all(keys.filter(k => k !== CACHE).map(k => caches.delete(k))))
-      .then(() => self.clients.claim())
-  );
+  e.waitUntil((async () => {
+    const keys = await caches.keys();
+    /* v17 之前的页面没有 controllerchange 监听器，需要由这里强制刷新一次。 */
+    const needsLegacyReload = keys.some(k => {
+      const version = Number((k.match(/^cet6-vocab-v(\d+)$/) || [])[1]);
+      return version > 0 && version < 17;
+    });
+    await Promise.all(keys.filter(k => k !== CACHE).map(k => caches.delete(k)));
+    await self.clients.claim();
+    if (needsLegacyReload) {
+      const windows = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+      /* 不等待 navigate：激活完成前等待导航结果会与页面请求互相锁住。 */
+      windows.forEach(client => {
+        client.navigate(client.url).catch(() => {});
+      });
+    }
+  })());
 });
 
 self.addEventListener('fetch', e => {
