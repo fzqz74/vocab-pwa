@@ -14,6 +14,10 @@ function normalizeMode(value) {
   return value === 'ebbinghaus' ? 'ebbinghaus' : 'swipe';
 }
 
+function isSpecialMarkMode(mode) {
+  return normalizeMode(mode || state.mode) === 'ebbinghaus';
+}
+
 function normalizeMap(value) {
   return (value && typeof value === 'object' && !Array.isArray(value)) ? value : {};
 }
@@ -184,9 +188,9 @@ function markedWords(mode) {
   return out;
 }
 
-/* ---------- 标记词艾宾浩斯复习计划(跨天间隔) ---------- */
+/* ---------- 跨天复习间隔 ---------- */
 /* 间隔参考艾宾浩斯遗忘曲线: 12小时 → 1天 → 2天 → 4天 → 7天 → 15天 → 30天
-   标记词不再只做"一轮内重复", 而是按真实时间安排下一次复习。 */
+   艾宾浩斯新词和刷词模式的标记词使用；艾宾浩斯特重点词只做顺序复习。 */
 const REVIEW_INTERVALS = [
   12 * 3600e3,
   1 * 86400e3,
@@ -252,11 +256,9 @@ function ensureEbbinghausSchedule(word, now) {
   return s;
 }
 
-/* 独立的跨天复习队列: 已完成的词进入计划, 标记词交给标记词模块。 */
+/* 独立的新词复习队列: 背完的新词自动进入计划；特重点标记不影响其排期。 */
 function ebbinghausWords() {
-  return allWordEntries().filter(w =>
-    ebbinghausScheduleOf(w.word) && !marksForMode('ebbinghaus')[w.word]
-  );
+  return allWordEntries().filter(w => ebbinghausScheduleOf(w.word));
 }
 
 function ebbinghausStats(now) {
@@ -322,6 +324,13 @@ function humanInterval(ms) {
   return Math.max(1, Math.round(ms / 60000)) + ' 分钟';
 }
 
+function formatDueTime(ms) {
+  const d = new Date(ms);
+  const hh = String(d.getHours()).padStart(2, '0');
+  const mm = String(d.getMinutes()).padStart(2, '0');
+  return (d.getMonth() + 1) + '月' + d.getDate() + '日 ' + hh + ':' + mm;
+}
+
 /* 已到期待复习的标记词(历史遗留的、没有计划的标记词视为立即到期) */
 function isDueNow(word, now, mode) {
   const s = scheduleOf(word, mode);
@@ -358,9 +367,14 @@ function startSession(kind) {
   let list;
   let dueSet = null;
   if (kind === 'marked') {
-    const rq = markedReviewQueue(Date.now(), markMode);
-    list = rq.due.concat(rq.later);
-    dueSet = new Set(rq.due.map(w => w.word));
+    if (isSpecialMarkMode(markMode)) {
+      // 艾宾浩斯特重点词只做顺序浏览，不使用跨天记忆计划。
+      list = markedWords(markMode);
+    } else {
+      const rq = markedReviewQueue(Date.now(), markMode);
+      list = rq.due.concat(rq.later);
+      dueSet = new Set(rq.due.map(w => w.word));
+    }
   } else if (kind === 'review') {
     list = ebbinghausReviewQueue();
     dueSet = new Set(list.map(w => w.word));
@@ -370,7 +384,9 @@ function startSession(kind) {
   if (!list.length) {
     if (kind === 'marked') {
       showDoneOverlay(
-        '当前没有' + MODE_LABEL[markMode] + '标记词\n背词时点底部「⭐ 标记」即可收藏',
+        isSpecialMarkMode(markMode)
+          ? '当前没有特重点标记词\n背词时点底部「⭐ 标记」即可加入特重点'
+          : '当前没有' + MODE_LABEL[markMode] + '标记词\n背词时点底部「⭐ 标记」即可收藏',
         true
       );
     }
@@ -421,7 +437,10 @@ function renderCard() {
   document.getElementById('word-meaning').textContent = w.meaning || '';
 
   const badge = document.getElementById('review-badge');
-  if (session.kind === 'marked' || session.kind === 'review') {
+  const intervalMarkedReview =
+    session.kind === 'marked' && !isSpecialMarkMode(session.markMode);
+  const intervalReview = session.kind === 'review' || intervalMarkedReview;
+  if (intervalReview) {
     const st = session.kind === 'marked'
       ? scheduleOf(w.word, session.markMode)
       : ebbinghausScheduleOf(w.word);
@@ -432,24 +451,38 @@ function renderCard() {
         ? '🔁 第 ' + (stage + 1) + ' 次复习'
         : (session.kind === 'marked' ? '⭐ 已标记' : '📚 新词'));
     badge.classList.add('show');
+  } else if (session.kind === 'marked') {
+    badge.textContent = '⭐ 特重点';
+    badge.classList.add('show');
+  } else if (session.kind === 'remain' && isSpecialMarkMode(session.markMode)) {
+    badge.textContent = '📚 新词';
+    badge.classList.add('show');
   } else {
     badge.textContent = '🔁 复习';
     badge.classList.toggle('show', !!e.review);
   }
 
   let sessionLabel = SESSION_LABEL[session.kind] || MODE_LABEL[session.markMode];
-  if (session.kind === 'remain') sessionLabel = MODE_LABEL[session.markMode];
-  if (session.kind === 'marked') sessionLabel = MODE_LABEL[session.markMode] + '标记词';
+  if (session.kind === 'remain') {
+    sessionLabel = isSpecialMarkMode(session.markMode)
+      ? '艾宾浩斯 · 背新词'
+      : MODE_LABEL[session.markMode];
+  }
+  if (session.kind === 'marked') {
+    sessionLabel = isSpecialMarkMode(session.markMode)
+      ? '特重点标记词'
+      : MODE_LABEL[session.markMode] + '标记词';
+  }
   document.getElementById('swipe-mode-label').textContent = sessionLabel;
   document.getElementById('swipe-hint').textContent =
-    (session.kind === 'marked' || session.kind === 'review')
+    intervalReview
       ? '「没记住」回到 12 小时 · 「记住了」进入下一复习间隔'
+      : (session.kind === 'remain' && isSpecialMarkMode(session.markMode))
+        ? '← 左滑下一个 · 新词会自动加入艾宾浩斯复习计划'
       : (state.display === 'direct' ? '← 左滑下一个 · 右滑上一个' : '← 左滑下一个 · 点击卡片看释义');
   const gradeBar = document.getElementById('grade-bar');
   if (gradeBar) {
-    gradeBar.style.display = (session.kind === 'marked' || session.kind === 'review')
-      ? 'flex'
-      : 'none';
+    gradeBar.style.display = intervalReview ? 'flex' : 'none';
   }
   document.getElementById('swipe-counter').textContent =
     (session.pos + 1) + ' / ' + session.queue.length;
@@ -470,7 +503,7 @@ function markCurrentDone() {
 
 /* 标记词评分: 记住了 -> 推进到下一间隔; 没记住 -> 回到第一间隔并本轮稍后重现 */
 function gradeMarked(ok) {
-  if (!session.active || session.kind !== 'marked') return;
+  if (!session.active || session.kind !== 'marked' || isSpecialMarkMode(session.markMode)) return;
   const e = curEntry();
   if (!e) return;
   const w = session.words[e.idx];
@@ -553,16 +586,26 @@ function endSession() {
   stopSpeak();
   const kind = session.kind;
   const all = wordList();
-  const doneCount = Object.keys(state.doneMap).length;
+  const doneCount = all.filter(w => state.doneMap[w.word]).length;
 
   if (kind === 'marked') {
-    showDoneOverlay('标记词背诵结束！\n本次共 ' + session.words.length + ' 个标记词');
+    showDoneOverlay(
+      isSpecialMarkMode(session.markMode)
+        ? '特重点标记词复习结束！\n本次共 ' + session.words.length + ' 个，不占用艾宾浩斯复习计划'
+        : '标记词背诵结束！\n本次共 ' + session.words.length + ' 个标记词'
+    );
   } else if (kind === 'review') {
     const stats = ebbinghausStats();
     showDoneOverlay(
       '艾宾浩斯复习结束！\n今日进度 ' + stats.today + '/' + stats.goal +
       (stats.due > 0 ? '\n还有 ' + stats.due + ' 个到期词' : '')
     );
+  } else if (kind === 'remain' && isSpecialMarkMode(session.markMode)) {
+    const ebbinghausHighlights = doneCount >= all.length
+      ? '🎉 本词表的新词已全部学完！\n它们都已进入艾宾浩斯复习计划'
+      : '艾宾浩斯新词学习结束！\n本次共 ' + session.words.length +
+        ' 个新词\n已完成的新词已自动加入复习计划';
+    showDoneOverlay(ebbinghausHighlights);
   } else if (kind === 'remain' && doneCount >= all.length) {
     // 本轮全部完成 -> 下一轮
     state.round += 1;
@@ -635,7 +678,8 @@ const HOME_META = {
 function refreshHome() {
   applyModeUI();
   const all = wordList();
-  const done = Object.keys(state.doneMap).length;
+  const done = all.filter(w => state.doneMap[w.word]).length;
+  const newRemaining = Math.max(0, all.length - done);
   const meta = HOME_META[state.wordlist] || HOME_META.core;
   document.getElementById('app-title').textContent = meta[0];
   document.getElementById('app-subtitle').textContent = meta[1];
@@ -650,15 +694,28 @@ function refreshHome() {
   const rs = markedScheduleStats();
   const planEl = document.getElementById('review-plan-text');
   if (planEl) {
-    planEl.textContent = rs.total
-      ? (MODE_LABEL[state.mode] + '标记 ' + rs.total + ' 个 · 今日待复习 ' + rs.due + ' 个')
-      : (MODE_LABEL[state.mode] + '标记 0 个 · 两套标记互不影响');
+    if (isSpecialMarkMode(state.mode)) {
+      planEl.textContent = rs.total
+        ? '特重点 ' + rs.total + ' 个 · 按刷词方式顺序复习'
+        : '特重点 0 个 · 背词时点 ⭐ 即可加入';
+    } else {
+      planEl.textContent = rs.total
+        ? (MODE_LABEL[state.mode] + '标记 ' + rs.total + ' 个 · 今日待复习 ' + rs.due + ' 个')
+        : (MODE_LABEL[state.mode] + '标记 0 个 · 两套标记互不影响');
+    }
   }
   const es = ebbinghausStats();
   const dueText = document.getElementById('ebbinghaus-due-text');
   if (dueText) {
-    dueText.textContent = '待复习 ' + es.due + ' 词 · 已安排 ' + es.total + ' 词';
+    dueText.textContent =
+      '新词剩余 ' + newRemaining + ' 词 · 计划 ' + es.total + ' 词 · 今日到期 ' + es.due + ' 词';
   }
+  const newBtn = document.getElementById('btn-start-ebbinghaus-new');
+  const newLabel = document.getElementById('ebbinghaus-new-label');
+  const newCount = document.getElementById('ebbinghaus-new-count');
+  if (newBtn) newBtn.disabled = newRemaining === 0;
+  if (newLabel) newLabel.textContent = newRemaining === 0 ? '新词已背完' : '背新词';
+  if (newCount) newCount.textContent = newRemaining;
   const progress = document.getElementById('daily-review-progress');
   if (progress) progress.textContent = es.today + '/' + es.goal;
   const goalProgress = document.getElementById('daily-goal-progress');
@@ -668,11 +725,31 @@ function refreshHome() {
   const goalInput = document.getElementById('daily-goal-input');
   if (goalInput && document.activeElement !== goalInput) goalInput.value = es.goal;
   const reviewBtn = document.getElementById('btn-start-ebbinghaus');
+  const reviewLabel = document.getElementById('ebbinghaus-review-label');
+  const dueCount = document.getElementById('ebbinghaus-due-count');
+  const reviewCaption = document.getElementById('ebbinghaus-review-caption');
+  const reviewAvailable = Math.min(es.due, es.remaining);
   if (reviewBtn) {
     reviewBtn.disabled = es.due === 0 || es.remaining === 0;
-    reviewBtn.textContent = es.remaining === 0
-      ? '今日目标已完成'
-      : (es.due > 0 ? '开始今日复习 · ' + Math.min(es.due, es.remaining) + ' 词' : '暂无到期单词');
+  }
+  if (reviewLabel) {
+    reviewLabel.textContent = es.remaining === 0 ? '今日复习完成' : '艾宾浩斯复习';
+  }
+  if (dueCount) dueCount.textContent = reviewAvailable;
+  if (reviewCaption) {
+    if (es.total === 0) {
+      reviewCaption.textContent = newRemaining
+        ? '背完的新词会按间隔自动加入这里。'
+        : '暂无复习任务。';
+    } else if (es.remaining === 0) {
+      reviewCaption.textContent = '今日目标已完成，到期词会继续保留。';
+    } else if (es.due > 0) {
+      reviewCaption.textContent = '今天可复习 ' + reviewAvailable + ' 个到期词。';
+    } else if (es.nextDue) {
+      reviewCaption.textContent = '下次到期：' + formatDueTime(es.nextDue);
+    } else {
+      reviewCaption.textContent = '暂无到期单词。';
+    }
   }
 }
 
@@ -680,6 +757,9 @@ function applyModeUI() {
   const isEbbinghaus = state.mode === 'ebbinghaus';
   const module = document.getElementById('ebbinghaus-module');
   if (module) module.hidden = !isEbbinghaus;
+  document.querySelectorAll('[data-swipe-only]').forEach(el => {
+    el.hidden = isEbbinghaus;
+  });
 
   const modeLabel = document.getElementById('home-mode-label');
   if (modeLabel) modeLabel.textContent = MODE_LABEL[state.mode];
@@ -694,14 +774,16 @@ function applyModeUI() {
   const markedLabel = document.getElementById('marked-action-label');
   if (markedLabel) {
     markedLabel.textContent = isEbbinghaus
-      ? '背艾宾浩斯标记词'
+      ? '背特重点标记词'
       : '背刷词模式标记词';
   }
 
   const clearButton = document.getElementById('btn-clear-marked');
   if (clearButton) {
     const count = markedWords().length;
-    clearButton.textContent = '清空' + MODE_LABEL[state.mode] + '标记词（' + count + '）';
+    clearButton.textContent = isEbbinghaus
+      ? '清空特重点标记词（' + count + '）'
+      : '清空刷词模式标记词（' + count + '）';
   }
 }
 
@@ -795,7 +877,11 @@ function toggleMark() {
   const marks = marksForMode(session.markMode);
   const schedules = markedSchedulesForMode(session.markMode);
   const on = !marks[w.word];
-  if (on) { marks[w.word] = 1; ensureSchedule(w.word, null, session.markMode); }
+  if (on) {
+    marks[w.word] = 1;
+    if (isSpecialMarkMode(session.markMode)) delete schedules[w.word];
+    else ensureSchedule(w.word, null, session.markMode);
+  }
   else {
     delete marks[w.word];
     delete schedules[w.word];
@@ -804,9 +890,11 @@ function toggleMark() {
   syncMarkButton();
   refreshMarkedCount();
   refreshHome();
+  const markLabel = isSpecialMarkMode(session.markMode)
+    ? '特重点'
+    : MODE_LABEL[session.markMode] + '标记';
   toast(
-    (on ? '⭐ 已加入' + MODE_LABEL[session.markMode] + '标记 · ' : '已从' +
-      MODE_LABEL[session.markMode] + '标记移除 · ') + w.word
+    (on ? '⭐ 已加入' + markLabel + ' · ' : '已从' + markLabel + '移除 · ') + w.word
   );
 }
 
@@ -818,6 +906,7 @@ function goHome() {
   showPage('home');
 }
 document.getElementById('btn-start-remain').addEventListener('click', () => startSession('remain'));
+document.getElementById('btn-start-ebbinghaus-new').addEventListener('click', () => startSession('remain'));
 document.getElementById('btn-start-marked').addEventListener('click', () => startSession('marked'));
 document.getElementById('btn-start-done').addEventListener('click', () => startSession('done'));
 document.getElementById('btn-start-ebbinghaus').addEventListener('click', () => startSession('review'));
@@ -894,7 +983,8 @@ document.getElementById('btn-clear-marked').addEventListener('click', () => {
   const schedules = markedSchedulesForMode(mode);
   const n = Object.keys(marks).length;
   if (!n) { toast('当前模式没有标记词'); return; }
-  if (confirm('确定清空' + MODE_LABEL[mode] + '的全部标记词吗？\n共 ' + n +
+  const modeName = isSpecialMarkMode(mode) ? '特重点标记词' : MODE_LABEL[mode] + '的全部标记词';
+  if (confirm('确定清空' + modeName + '吗？\n共 ' + n +
     ' 个。另一模式的标记词会保留。')) {
     state.markedByMode[mode] = {};
     state.markedScheduleByMode[mode] = {};
@@ -902,7 +992,7 @@ document.getElementById('btn-clear-marked').addEventListener('click', () => {
     syncMarkButton();
     refreshMarkedCount();
     refreshHome();
-    toast('已清空 ' + n + ' 个' + MODE_LABEL[mode] + '标记词');
+    toast('已清空 ' + n + ' 个' + modeName);
   }
 });
 

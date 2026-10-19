@@ -6,6 +6,7 @@
   -webkit-tap-highlight-color: transparent;
   user-select: none;
 }
+[hidden] { display: none !important; }
 
 html, body {
   width: 100%;
@@ -206,6 +207,19 @@ html, body {
   background: linear-gradient(90deg, #ff7a59, #ffc466);
 }
 .review-module .btn { margin-top: 14px; }
+.ebbinghaus-path-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 14px;
+}
+.review-module .ebbinghaus-path-actions .btn { margin-top: 0; }
+.path-caption {
+  margin: -3px 4px 2px;
+  font-size: 11px;
+  line-height: 1.55;
+  color: rgba(255,255,255,.45);
+}
 .module-note {
   margin-top: 10px;
   font-size: 11px;

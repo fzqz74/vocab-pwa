@@ -45,8 +45,8 @@
     <section class="review-module" id="ebbinghaus-module" data-mode-section="ebbinghaus">
       <div class="module-head">
         <div>
-          <h2>艾宾浩斯复习</h2>
-          <p id="ebbinghaus-due-text">待复习 0 词 · 已安排 0 词</p>
+          <h2>艾宾浩斯学习计划</h2>
+          <p id="ebbinghaus-due-text">新词 0 词 · 待复习 0 词</p>
         </div>
         <div class="daily-goal-control" aria-label="设置今日复习目标">
           <button class="goal-step" id="goal-minus" type="button" aria-label="目标减少10词">−</button>
@@ -61,11 +61,24 @@
       <div class="progress-bar-wrap module-progress">
         <div class="progress-bar" id="daily-goal-progress"></div>
       </div>
-      <button class="btn btn-accent btn-block" id="btn-start-ebbinghaus" type="button">暂无到期单词</button>
-      <p class="module-note">新词完成后自动安排：12小时 → 1天 → 2天 → 4天 → 7天 → 15天 → 30天</p>
+      <div class="ebbinghaus-path-actions">
+        <button class="btn btn-primary btn-block" id="btn-start-ebbinghaus-new" type="button">
+          <span class="btn-icon">📖</span>
+          <span id="ebbinghaus-new-label">背新词</span>
+          <span class="btn-badge" id="ebbinghaus-new-count">0</span>
+        </button>
+        <p class="path-caption">按词表顺序学习；每背完一个词，自动加入跨天复习计划。</p>
+        <button class="btn btn-accent btn-block" id="btn-start-ebbinghaus" type="button">
+          <span class="btn-icon">🧠</span>
+          <span id="ebbinghaus-review-label">艾宾浩斯复习</span>
+          <span class="btn-badge" id="ebbinghaus-due-count">0</span>
+        </button>
+        <p class="path-caption" id="ebbinghaus-review-caption">暂无到期单词</p>
+      </div>
+      <p class="module-note">复习间隔：12小时 → 1天 → 2天 → 4天 → 7天 → 15天 → 30天</p>
     </section>
     <div class="home-actions">
-      <button class="btn btn-primary btn-block" id="btn-start-remain">
+      <button class="btn btn-primary btn-block" id="btn-start-remain" data-swipe-only>
         <span class="btn-icon">📖</span>
         <span id="remain-action-label">背未完成的单词</span>
       </button>
@@ -74,7 +87,7 @@
         <span id="marked-action-label">背刷词模式标记词</span>
         <span class="btn-badge" id="marked-count">0</span>
       </button>
-      <button class="btn btn-secondary btn-block" id="btn-start-done">
+      <button class="btn btn-secondary btn-block" id="btn-start-done" data-swipe-only>
         <span class="btn-icon">🔄</span>
         <span>复习已完成的单词</span>
       </button>
@@ -150,7 +163,7 @@
           <input type="radio" name="mode" value="ebbinghaus">
           <span class="radio-label">
             <span class="radio-title">艾宾浩斯模式</span>
-            <span class="radio-desc">显示今日到期复习和目标进度；这里的标记词与刷词模式互不影响</span>
+            <span class="radio-desc">新词学完后自动进入跨天复习；这里的标记词作为特重点，不进入艾宾浩斯计划</span>
           </span>
         </label>
       </div>
@@ -207,8 +220,8 @@
           音标来源：有道 CET6 词书（kajweb/dict 开源整理）<br>
           排序方式：按 Google Books 英语词频降序（近似考频），六级核心版已剔除初中/高中/四级基础词<br>
           词库规模：六级核心 1887 词 / 六级完整 3991 词 / 专升本 3215 词<br>
-          艾宾浩斯复习：新词完成后进入独立复习模块，按真实时间跨天安排（12小时 → 1天 → 2天 → 4天 → 7天 → 15天 → 30天），每日目标可在首页调整<br>
-          标记词复习：刷词模式和艾宾浩斯模式各自保存一套标记与复习计划，互不覆盖<br>
+          艾宾浩斯复习：新词完成后自动进入跨天复习计划（12小时 → 1天 → 2天 → 4天 → 7天 → 15天 → 30天），每日目标可在首页调整<br>
+          特重点词复习：艾宾浩斯模式下单独标记的重点词按刷词方式顺序浏览，不占用艾宾浩斯复习计划<br>
           数据存储：本地浏览器（离线可用）<br>
           技术方案：PWA（可添加到桌面）
         </p>
