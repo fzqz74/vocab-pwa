@@ -537,7 +537,8 @@ function gradeMarked(ok) {
   next(1);
 }
 
-/* 独立艾宾浩斯复习评分: 同样按真实时间跨天推进。 */
+/* 独立艾宾浩斯复习评分: 逾期仍从当前节点开始，每次只推进一个节点。
+   "没记住"退回第一节点，但同一词本轮只出现一次。 */
 function gradeEbbinghaus(ok) {
   if (!session.active || session.kind !== 'review') return;
   const e = curEntry();
@@ -555,8 +556,7 @@ function gradeEbbinghaus(ok) {
     s.stage = 0;
     s.due = now + REVIEW_INTERVALS[0];
     s.lapses = (Number(s.lapses) || 0) + 1;
-    session.queue.push({ idx: e.idx, review: true });
-    toast('😖 没记住 · 本轮稍后再复习');
+    toast('😖 没记住 · ' + humanInterval(REVIEW_INTERVALS[0]) + '后再复习');
   }
   saveState();
   refreshHome();
@@ -755,7 +755,7 @@ function refreshHome() {
     } else if (es.remaining === 0) {
       reviewCaption.textContent = '今日目标已完成，到期词会继续保留。';
     } else if (es.due > 0) {
-      reviewCaption.textContent = '今天可复习 ' + reviewAvailable + ' 个到期词。';
+      reviewCaption.textContent = '今天可复习 ' + reviewAvailable + ' 个到期词；逾期词仍从原节点继续。';
     } else if (es.nextDue) {
       reviewCaption.textContent = '下次到期：' + formatDueTime(es.nextDue);
     } else {
